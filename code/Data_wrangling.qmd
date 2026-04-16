@@ -1,0 +1,31 @@
+---
+title: "Data Wrangling Final Project"
+author: "Murilo"
+format: html
+editor: visual
+---
+
+# 1. Taking a look into the data.
+
+```{r}
+#| message: false
+#| warning: false
+
+library(janitor) #data cleaning
+library(dplyr) #data wrangling
+library(tidyverse) #dara wrangling
+library(readr) #read excel file
+library(lubridate) #work witg date and time in R
+```
+
+# 2. Wrangling: Meta data.
+
+```{r}
+#| message: false
+#| warning: false
+
+meta_train <- read.csv("../2026dsa_finalproject_group2/data/training_meta.csv")
+
+meta_train
+```
+
