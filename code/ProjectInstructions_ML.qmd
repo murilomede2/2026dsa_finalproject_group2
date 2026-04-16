@@ -152,9 +152,25 @@ library(tidyverse)
 library(doParallel)  
 library(caret)
 ```
+
+#Training Data
+```{r}
+soil <- read_csv("../data/training_soil.csv")
+
+soil
 ```
 
+```{r}
+Trait <- read_csv("../data/training_trait.csv")
 
+Trait
+```
+
+```{r}
+meta <- read_csv("../data/training_meta.csv")
+
+meta
+```
 
 
 
