@@ -140,37 +140,20 @@ Once each team submits their predictions on my test set, I will compare their pr
 
 The team that gets the highest **R2** or lowest **RMSE** will receive an award and bragging rights.  
 
-#Prep
+xgboost Training
 ```{r}
-#install.packages("caret")
-library(tidymodels)  
-library(finetune)     
-library(vip)          
-library(xgboost)      
-library(ranger)      
-library(tidyverse)    
-library(doParallel)  
-library(caret)
-```
-
-#Training Data
-```{r}
-soil <- read_csv("../data/training_soil.csv")
-
-soil
+{r corn_split}
+set.seed(9678965) # Setting seed to get reproducible results 
+weather_split <- initial_split(
+  weather, 
+  prop = .7, # proption of split same as previous codes
+  strata = strength_gtex  # Stratify by target variable
+  )
+weather_split
 ```
 
 ```{r}
-Trait <- read_csv("../data/training_trait.csv")
 
-Trait
 ```
-
-```{r}
-meta <- read_csv("../data/training_meta.csv")
-
-meta
-```
-
 
 
