@@ -24,6 +24,8 @@ library(daymetr)
 library(purrr)
 library(USAboundaries)
 library(sf)
+library(ggridges)
+library(ggplot2)
 
 meta_training_raw <- read.csv(here("data","training_meta.csv"))
 
@@ -245,7 +247,7 @@ ggplot() +
                  y = latitude,
                  color = site))
 
-glimpse(corn_base_training)
+#glimpse(corn_base_training)
 
 #Exporting master file:
 
@@ -363,14 +365,86 @@ options(timeout = 300)
                     ~round(., 1)))
      
  
-
-   
-    #Output:
+ #Output:
     
-#write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
+   #write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
     
 ```
 
+#7. Ridge plot to visualize the distribution of all variable over month.
+
+```{r}
+#| message: false
+#| warning: false
+
+
+ weather_long <- corn_training %>%
+   pivot_longer(
+    cols = c(
+      starts_with("prcp_mm_"),
+      starts_with("tmax_deg_c_mean_"),
+      starts_with("tmin_deg_c_mean_"),
+      starts_with("srad_w_m_2_mean_"),
+      starts_with("gdd_")
+    ),
+    names_to = c("variable", "month"),
+    names_pattern = "^(.*)_([A-Za-z]+)$",
+    values_to = "value"
+  ) %>%
+  mutate(
+    month = factor(
+      month,
+      levels = c("Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    ),
+    variable = factor(
+      variable,
+      levels = c(
+        "prcp_mm",
+        "tmax_deg_c_mean",
+        "tmin_deg_c_mean",
+        "srad_w_m_2_mean",
+        "gdd"
+      ),
+      labels = c(
+        "Precipitation (mm)",
+        "Mean Tmax (°C)",
+        "Mean Tmin (°C)",
+        "Mean Solar Radiation (W/m²)",
+        "GDD"
+      )
+    )
+  )
+ 
+ #view(weather_long)
+ 
+  weather_long_plot <- ggplot(weather_long,
+        aes(x = value,
+            y = month,
+            fill = month
+            )) + 
+   geom_density_ridges(scale = 3,
+                       rel_min_height = 0.01,
+                       na.rm = T
+                       ) +
+   facet_wrap(~variable, scales = "free_x", ncol = 2) +
+   scale_fill_viridis_d(option = "C",
+                        alpha = 0.5) +
+   theme(legend.position = "none") +
+   labs(x = "Value",
+        y = "Month",
+        title = "Density Distribuition of Monthly Weather Variables"
+        )
+ 
+ 
+   ggsave(
+   filename = "ridge_plot_weather.jpeg",
+   plot = weather_long_plot,
+   width = 10,
+   height = 6,
+   dpi = 600)
+   
+  
+```
 
 
 
