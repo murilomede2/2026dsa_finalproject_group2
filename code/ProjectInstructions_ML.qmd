@@ -276,7 +276,7 @@ options(timeout = 300)
     silent = TRUE
   )
   
-  daily_weather <- weather$data %>%
+  monthly_weather <- weather$data %>%
     as_tibble() %>%
     rename_with(~ gsub("\\.+", "_", .)) %>%      #replace multiple dots in column names with "_"
     rename_with(~ gsub("_$", "", .)) %>%         #remove trailing "_"
@@ -284,17 +284,21 @@ options(timeout = 300)
     mutate(site = site,
       date = as.Date(paste(year, yday, sep = "-"), format = "%Y-%j"),
       month = month(date, label = T, abbr = T),                 #weather data from each month
-      gdd = pmax(((tmax_deg_c + tmin_deg_c) / 2) - 10, 0)        #calculating Growing Degree Days
-    ) %>%
+      tmax_adj = pmin(tmax_deg_c, 30),,                                                            
+      tmin_adj = pmax(tmin_deg_c, 10),
+      tavg_adj = (tmax_adj + tmin_adj) / 2,
+      gdd = pmax(tavg_adj - 10, 0)) %>%
     filter(date >= plant_date, date <= harvest_date) %>%     #filtering the data based on growing season
     group_by(site, year, month) %>%
     summarise(
       prcp_mm = sum(prcp_mm_day, na.rm = TRUE),
-      tmax_deg_c_mean  = mean(tmax_deg_c, na.rm = TRUE),
-      tmin_deg_c_mean  = mean(tmin_deg_c, na.rm = TRUE),
-      srad_w_m_2_mean  = mean(srad_w_m_2, na.rm = TRUE),
+      tmax_deg_c_mean = mean(tmax_deg_c, na.rm = TRUE),
+      tmin_deg_c_mean = mean(tmin_deg_c, na.rm = TRUE),
+      srad_w_m_2_mean = mean(srad_w_m_2, na.rm = TRUE),
       gdd  = sum(gdd, na.rm = TRUE),
-      .groups = "drop")
+      .groups = "drop") 
+  
+  return(monthly_weather)
 }
   
 
@@ -323,7 +327,7 @@ options(timeout = 300)
   
   #Checking output:
   
- #write.csv(weather_monthly_training, here("data", "weather_monthly_training.csv"), row.names = FALSE)
+ write.csv(weather_monthly_training, here("data", "weather_monthly_training.csv"), row.names = FALSE)
   
   #Merging corn_base_training data set with weather_monthly_training:
   
@@ -331,7 +335,7 @@ options(timeout = 300)
    select(-latitude,-longitude) %>%
    left_join(weather_monthly_training, by = c("year", "site"))
   
- #write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
+ write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
   
 ```
 
@@ -350,15 +354,20 @@ options(timeout = 300)
       yield * ((100 - grain_moisture) / (100 - standard_moisture))
     }
 
- #Applying the function:
+ #Applying the function  and rounding the numbers from weather data columns (one decimal point)
     
     corn_training <- corn_training %>%
       mutate(yield_mg_ha = yield_correction(yield_mg_ha, grain_moisture)) %>%
-      select(-grain_moisture)
-    
+      select(-grain_moisture) %>%
+      mutate(across(.cols = c(6, 12:60),
+                    ~round(., 1)))
+     
+ 
+
+   
     #Output:
     
-   #write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
+#write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
     
 ```
 
