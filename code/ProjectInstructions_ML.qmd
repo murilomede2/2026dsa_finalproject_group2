@@ -5,7 +5,7 @@ format:
     embed-resources: true
     toc: true
     theme: cerulean
-author: Murilo Matos
+author: Mia Gale and Murilo Matos.
 ---
 
 # 1. Loading the Datasets.
@@ -249,7 +249,7 @@ glimpse(corn_base_training)
 
 #Exporting master file:
 
-write.csv(corn_base_training, here("data", "corn_base_training.csv"), row.names = FALSE )
+ #write.csv(corn_base_training, here("data", "corn_base_training.csv"), row.names = FALSE )
 
 
 ```
@@ -323,7 +323,7 @@ options(timeout = 300)
   
   #Checking output:
   
-  write.csv(weather_monthly_training, here("data", "weather_monthly_training.csv"), row.names = FALSE)
+ #write.csv(weather_monthly_training, here("data", "weather_monthly_training.csv"), row.names = FALSE)
   
   #Merging corn_base_training data set with weather_monthly_training:
   
@@ -331,7 +331,7 @@ options(timeout = 300)
    select(-latitude,-longitude) %>%
    left_join(weather_monthly_training, by = c("year", "site"))
   
-  write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
+ #write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
   
 ```
 
@@ -358,7 +358,7 @@ options(timeout = 300)
     
     #Output:
     
-    write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
+   #write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
     
 ```
 
