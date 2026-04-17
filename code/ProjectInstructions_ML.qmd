@@ -103,11 +103,13 @@ trait_training <- trait_training_clean %>%
 
 #Checking if worked, and if there is any difference between the data sets within the "site" column:
 
-meta_training %>%
+##OBS: sometimes this code will not print the output under the chunk. Try adding a pipe and the function "head()" and run. Afeter, you can remove this and run normally.
+
+ meta_training %>%          
   distinct(site) %>%
   arrange(site)
-
-soil_training %>%
+  
+ soil_training %>%
   distinct(site) %>%
   arrange(site)
 
@@ -220,7 +222,7 @@ states <- us_states() %>%
 
 ggplot() +
   geom_sf(data = states) +
-  geom_point(data = corn_base_training,
+  geom_point(data = meta_training,
              aes(x = longitude,
                  y = latitude,
                  color = site))
@@ -231,11 +233,23 @@ corn_base_training <- trait_training %>%
   left_join(meta_training, by = c("year", "site")) %>%
   left_join(soil_training, by = c("year", "site")) %>%
   select(longitude, latitude, everything()) %>%
-  filter(!site %in% c("GEH1", "ONH1", "ONH2"))                ##Removing sites that are not in the USA
+  filter(!site %in% c("GEH1", "ONH1", "ONH2")) %>%      ##Removing sites that are not in the USA
+  filter(if_all(c(latitude, longitude, date_planted, date_harvested), ~ !is.na(.)))
+
+#Double checking:
+
+ggplot() +
+  geom_sf(data = states) +
+  geom_point(data = corn_base_training,
+             aes(x = longitude,
+                 y = latitude,
+                 color = site))
 
 glimpse(corn_base_training)
 
-write.csv(corn_base_training, "../2026dsa_finalproject_group2/data/corn_base_training.csv")
+#Exporting master file:
+
+write.csv(corn_base_training, here("data", "corn_base_training.csv"), row.names = FALSE )
 
 
 ```
@@ -246,47 +260,46 @@ write.csv(corn_base_training, "../2026dsa_finalproject_group2/data/corn_base_tra
 #| message: false
 #| warning: false
 
-  daymet <- function(site_name, lat, lon, yr, plant_date, harvest_date) {
+#First need to check if there are NAs values within the columns we need to pull the weather data: site, longitude, latitude, year, date_planted, date_harvested
+
+options(timeout = 300)
+
+  daymet <- function(site, lat, lon, year, plant_date, harvest_date) {
   
   weather <- download_daymet(
-    site = site_name,
+    site = site,
     lat = lat,
     lon = lon,
-    start = yr,
-    end = yr,
+    start = year,
+    end = year,
     internal = TRUE,
     silent = TRUE
   )
   
   daily_weather <- weather$data %>%
     as_tibble() %>%
-    rename_with(~ gsub("\\.+", "_", .)) %>%      #replace multiple dots with "_"
+    rename_with(~ gsub("\\.+", "_", .)) %>%      #replace multiple dots in column names with "_"
     rename_with(~ gsub("_$", "", .)) %>%         #remove trailing "_"
     rename_with(tolower) %>%                     #making all column names lower case
-    mutate(
+    mutate(site = site,
       date = as.Date(paste(year, yday, sep = "-"), format = "%Y-%j"),
-      gdd = pmax(((tmax_deg_c + tmin_deg_c) / 2) - 10, 0)
+      month = month(date, label = T, abbr = T),                 #weather data from each month
+      gdd = pmax(((tmax_deg_c + tmin_deg_c) / 2) - 10, 0)        #calculating Growing Degree Days
     ) %>%
-    filter(date >= plant_date, date <= harvest_date)
-  
-  weather_sum <- daily_weather %>%
+    filter(date >= plant_date, date <= harvest_date) %>%     #filtering the data based on growing season
+    group_by(site, year, month) %>%
     summarise(
-      prcp_total = sum(prcp_mm_day, na.rm = TRUE),
-      tmax_mean  = mean(tmax_deg_c, na.rm = TRUE),
-      tmin_mean  = mean(tmin_deg_c, na.rm = TRUE),
-      srad_mean  = mean(srad_w_m_2, na.rm = TRUE),
-      gdd_total  = sum(gdd, na.rm = TRUE)
-    ) %>%
-    mutate(
-      year = yr,
-      site_std = site_name
-    )
-  return(weather_sum)
+      prcp_mm = sum(prcp_mm_day, na.rm = TRUE),
+      tmax_deg_c_mean  = mean(tmax_deg_c, na.rm = TRUE),
+      tmin_deg_c_mean  = mean(tmin_deg_c, na.rm = TRUE),
+      srad_w_m_2_mean  = mean(srad_w_m_2, na.rm = TRUE),
+      gdd  = sum(gdd, na.rm = TRUE),
+      .groups = "drop")
 }
   
-  #
 
-  weather_training <- corn_base_training %>%
+
+  weather_monthly_training <- corn_base_training %>%
     distinct(site,                  #To not repeat the same weather data
              latitude, 
              longitude, 
@@ -294,17 +307,60 @@ write.csv(corn_base_training, "../2026dsa_finalproject_group2/data/corn_base_tra
              date_planted, 
              date_harvested) %>%
     pmap_dfr(~ daymet(
-    site_name = ..1,
+    site = ..1,
     lat = ..2,
     lon = ..3,
-    yr = ..4,
+    year = ..4,
     plant_date = ..5,
     harvest_date = ..6
-  ))
+  )) %>%
+    select(year, site, everything())  %>%
+    pivot_wider(names_from = month,
+                values_from = prcp_mm:gdd,
+                names_glue = "{.value}_{month}",
+                values_fn = mean
+                )
   
+  #Checking output:
+  
+  write.csv(weather_monthly_training, here("data", "weather_monthly_training.csv"), row.names = FALSE)
+  
+  #Merging corn_base_training data set with weather_monthly_training:
+  
+  corn_training <- corn_base_training %>%
+   select(-latitude,-longitude) %>%
+   left_join(weather_monthly_training, by = c("year", "site"))
+  
+  write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
   
 ```
 
+#6. Correcting the yield based on grain moisture.
+
+```{r}
+#| message: false
+#| warning: false
+
+ #Corn should be sold with 15% of moisture. Based on that, we need to calculate the yield using the following formula:
+ 
+ #Creating a function:
+ #Corrected_yield = harvested yield (Mg_ha) x ((100 - Harvested Grain Moisture) / (100 - Standard Moisture))
+
+    yield_correction <- function(yield, grain_moisture, standard_moisture = 15) {
+      yield * ((100 - grain_moisture) / (100 - standard_moisture))
+    }
+
+ #Applying the function:
+    
+    corn_training <- corn_training %>%
+      mutate(yield_mg_ha = yield_correction(yield_mg_ha, grain_moisture)) %>%
+      select(-grain_moisture)
+    
+    #Output:
+    
+    write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
+    
+```
 
 
 
