@@ -638,37 +638,11 @@ options(timeout = 300)
 ```
 
 
-# 8 xgboost Training
 ```{r}
-#| message: false
-#| warning: false
-#install.packages("xgboost") #new pacakage
-library(tidymodels)   # Core framework for modeling (includes recipes, workflows, parsnip, etc.)
-library(finetune)     # Additional tuning strategies (e.g., racing, ANOVA-based tuning)
-library(vip)          # For plotting variable importance from fitted models
-library(xgboost)      # XGBoost implementation in R
-library(ranger)       # Fast implementation of Random Forests
-library(tidyverse)    # Data wrangling and visualization
-library(doParallel)   # For parallel computing (useful during resampling/tuning)
-library(caret)       # Other great library for Machine Learning 
-```
+corn_training_reduced <- corn_training %>%
+  filter(year %in% 2015:2018) %>%
+  select(- c("site", "year", "hybrid", "date_harvested", "date_planted"))
 
-
-```{r}
-set.seed(9678965) # Setting seed to get reproducible results 
-corn_split <- initial_split
-  initial_split (
-  corn_base_training, 
-  prop = .7,
-  strata = yield_mg_ha # proption of split same as previous codes
-  ) 
-  
-corn_split
-```
-
-```{r corn Train}
-corn_train <- training(corn_split)  # 70% of data
-corn_train #This is your traing data frame
 ```
 
 

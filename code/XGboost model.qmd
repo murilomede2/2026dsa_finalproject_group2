@@ -6,6 +6,9 @@ editor: visual
 
 # 8 xgboost Training
 
+```{}
+```
+
 ```{r}
 #| message: false
 #| warning: false
@@ -23,9 +26,10 @@ library(caret)       # Other great library for Machine Learning
 ```{r}
 set.seed(9678965) # Setting seed to get reproducible results 
 
-corn_split <- initial_split(corn_base_training, 
-  prop = .7,
-  strata = yield_mg_ha) # proption of split same as previous codes
+corn_split <- initial_split(corn_training_reduced,
+                            prop = .7,
+                            strata = yield_mg_ha) 
+# proption of split same as previous codes
   
 corn_split
 ```
@@ -55,9 +59,10 @@ ggplot() +
 # Create recipe for data preprocessing
 corn_recipe <- recipe(yield_mg_ha ~ ., data = corn_train) %>% # Remove identifier columns and months not in growing season
   step_rm(
-    year,       # Remove year identifier
-    site,       # Remove site identifier
-    matches("Jan|Feb|Mar|Apr|Nov|Dec"),# Remove non-growing season months
+    date_planted,       # Remove year identifier
+    hybrid,       # Remove site identifier
+    date_harvested,
+    site# Remove non-growing season months
   )
 corn_recipe
 ```
@@ -97,7 +102,7 @@ xgb_spec
 set.seed(657) #34549
 
 resampling_foldcv <- vfold_cv(corn_train, # Create 5-fold cross-validation resampling object from training data
-                              v = 10)
+                              v = 5)
 
 resampling_foldcv
 resampling_foldcv$splits[[1]]
@@ -236,8 +241,8 @@ final_spec
 ```{r}
 set.seed(877)
 final_fit <- last_fit(final_spec,
-                weather_recipe,
-                split = weather_split)
+                corn_recipe,
+                split = corn_split)
 
 final_fit %>%
   collect_predictions()
