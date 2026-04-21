@@ -5,6 +5,7 @@ format:
     embed-resources: true
     toc: true
     theme: cerulean
+<<<<<<< HEAD
 author: Mia Gale and Murilo Matos
 ---
 
@@ -140,20 +141,510 @@ Once each team submits their predictions on my test set, I will compare their pr
 
 The team that gets the highest **R2** or lowest **RMSE** will receive an award and bragging rights.  
 
-xgboost Training
+
+=======
+author: Mia Gale and Murilo Matos.
+---
+
+# 1. Loading the Datasets.
+
 ```{r}
-{r corn_split}
-set.seed(9678965) # Setting seed to get reproducible results 
-weather_split <- initial_split(
-  weather, 
-  prop = .7, # proption of split same as previous codes
-  strata = strength_gtex  # Stratify by target variable
+#| message: false
+#| warning: false
+
+library(readr)
+library(dplyr)
+library(here)
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(daymetr)
+library(purrr)
+library(USAboundaries)
+library(sf)
+library(ggridges)
+library(ggplot2)
+
+meta_training_raw <- read.csv(here("data","training_meta.csv"))
+
+soil_training_raw <- read.csv(here("data","training_soil.csv"))
+
+trait_training_raw <- read.csv(here("data","training_trait.csv"))
+
+```
+  
+# 2. Inspecting the Datasets.
+
+```{r}
+#| message: false
+#| warning: false
+
+glimpse(meta_training_raw)
+glimpse(soil_training_raw)
+glimpse(trait_training_raw)
+
+names(meta_training_raw)
+names(soil_training_raw)
+names(trait_training_raw)
+
+summary(meta_training_raw)
+summary(soil_training_raw)
+summary(trait_training_raw)
+
+```
+# 3. Cleaning all the Datasets.
+
+## 3.1. Cleaning column names.
+
+```{r}
+#| message: false
+#| warning: false
+
+library(janitor)
+
+meta_training_clean <- clean_names(meta_training_raw)
+
+soil_training_clean <- clean_names(soil_training_raw) %>%
+  rename(soil_ph = soilp_h)
+
+trait_training_clean <- clean_names(trait_training_raw)
+
+
+names(meta_training_clean)
+names(soil_training_clean)
+names(trait_training_clean)
+```
+
+## 3.2. Function to Clean "Site" rows.
+
+```{r}
+#| message: false
+#| warning: false
+
+#Building the Function:
+
+clean_site_rows <- function(site_col) {
+  site_col %>%
+    str_to_upper() %>%                              #puts everything in uppercase              
+    str_trim() %>%                                  #remove spaces             
+    str_replace("([A-Z]{2,3}\\d+).*", "\\1")        #remove everything after the standardized site name
+}
+
+#Applying the Function:
+
+meta_training <- meta_training_clean %>%
+  mutate(site = clean_site_rows(site)) 
+
+soil_training <- soil_training_clean %>%
+  mutate(site = clean_site_rows(site)) 
+
+trait_training <- trait_training_clean %>%
+  mutate(site = clean_site_rows(site)) 
+
+#Checking if worked, and if there is any difference between the data sets within the "site" column:
+
+##OBS: sometimes this code will not print the output under the chunk. Try adding a pipe and the function "head()" and run. Afeter, you can remove this and run normally.
+
+ meta_training %>%          
+  distinct(site) %>%
+  arrange(site)
+  
+ soil_training %>%
+  distinct(site) %>%
+  arrange(site)
+
+ trait_training %>%
+  distinct(site) %>%
+  arrange(site)
+
+##OBS: "Trait" data set has one more value within "Site" Column. 
+
+#Checking which value is different:
+ 
+setdiff(trait_training$site, meta_training$site)
+setdiff(trait_training$site, soil_training$site)
+setdiff(meta_training$site, soil_training$site)
+
+##OBS: The "trait" data set has "TXH4" as an extra value compared to "meta" and "soil".
+
+trait_training <- trait_training %>%
+  filter(site != "TXH4")                              #removing the extra site value "TXH4"
+
+setdiff(trait_training$site, meta_training$site)      #double checking
+
+```
+
+## 3.3. Cleaning "year" columns.
+
+```{r}
+#| message: false
+#| warning: false
+
+#Checking if there is any value which differs between each "year" column among the data sets.
+
+ meta_training %>%
+  distinct(year) %>%
+  arrange(year)
+
+ soil_training %>%
+  distinct(year) %>%
+  arrange(year)
+
+ trait_training %>%
+  distinct(year) %>%
+  arrange(year)
+ 
+##OBS: In "soil" data set is missing 2014.
+
+#Formatting data types:
+ 
+ meta_training <- meta_training %>%
+  mutate(
+    year = as.integer(year),
+    latitude = as.numeric(latitude),
+    longitude = as.numeric(longitude)
   )
-weather_split
+
+soil_training <- soil_training %>%
+  mutate(
+    year = as.integer(year),
+    soil_ph = as.numeric(soil_ph),
+    om_pct = as.numeric(om_pct),
+    soilk_ppm = as.numeric(soilk_ppm),
+    soilp_ppm = as.numeric(soilp_ppm)
+  )
+
+trait_training <- trait_training %>%
+  mutate(
+    year = as.integer(year),
+    date_planted = mdy(date_planted),
+    date_harvested = mdy(date_harvested),
+    yield_mg_ha = as.numeric(yield_mg_ha),
+    grain_moisture = as.numeric(grain_moisture)
+  )
+ 
+##Removing the extra 2014 rows in "meta" and "trait" data sets:
+
+meta_training <- meta_training %>%
+  filter(year != 2014)
+
+trait_training <- trait_training %>%
+  filter(year != 2014)
+
+##Double checking if all data sets are matching the values in the "year" column:
+
+setdiff(trait_training$year, meta_training$year)
+setdiff(trait_training$year, soil_training$year)
+setdiff(meta_training$year, soil_training$year)
+
 ```
+
+#4. Merging the Data sets.
 
 ```{r}
+#| message: false
+#| warning: false
+
+#Removing the columns that are not important:
+
+meta_training <- meta_training %>%
+  select(-previous_crop) 
+  
+trait_training <- trait_training%>%
+  select(-c(replicate, block))
+
+#Merging data sets:
+
+##Checking the sites if they are inside the USA boundary:
+
+states <- us_states() %>%
+  filter(!(state_abbr %in% c("PR","AK","HI")))
+
+ggplot() +
+  geom_sf(data = states) +
+  geom_point(data = meta_training,
+             aes(x = longitude,
+                 y = latitude,
+                 color = site))
+
+##OBS: The ""GEH1", "ONH1", "ONH2", they are spots outside the USA.
+
+corn_base_training <- trait_training %>%
+  left_join(meta_training, by = c("year", "site")) %>%
+  left_join(soil_training, by = c("year", "site")) %>%
+  select(longitude, latitude, everything()) %>%
+  filter(!site %in% c("GEH1", "ONH1", "ONH2")) %>%      ##Removing sites that are not in the USA
+  filter(if_all(c(latitude, longitude, date_planted, date_harvested), ~ !is.na(.)))
+
+#Double checking:
+
+ggplot() +
+  geom_sf(data = states) +
+  geom_point(data = corn_base_training,
+             aes(x = longitude,
+                 y = latitude,
+                 color = site))
+
+#glimpse(corn_base_training)
+
+#Exporting master file:
+
+ #write.csv(corn_base_training, here("data", "corn_base_training.csv"), row.names = FALSE )
+
 
 ```
 
+#5. Pulling weather data from Daymet.
+
+```{r}
+#| message: false
+#| warning: false
+
+#First need to check if there are NAs values within the columns we need to pull the weather data: site, longitude, latitude, year, date_planted, date_harvested
+
+options(timeout = 300)
+
+  daymet <- function(site, lat, lon, year, plant_date, harvest_date) {
+  
+  weather <- download_daymet(
+    site = site,
+    lat = lat,
+    lon = lon,
+    start = year,
+    end = year,
+    internal = TRUE,
+    silent = TRUE
+  )
+  
+  monthly_weather <- weather$data %>%
+    as_tibble() %>%
+    rename_with(~ gsub("\\.+", "_", .)) %>%      #replace multiple dots in column names with "_"
+    rename_with(~ gsub("_$", "", .)) %>%         #remove trailing "_"
+    rename_with(tolower) %>%                     #making all column names lower case
+    mutate(site = site,
+      date = as.Date(paste(year, yday, sep = "-"), format = "%Y-%j"),
+      month = month(date, label = T, abbr = T),                 #weather data from each month
+      tmax_adj = pmin(tmax_deg_c, 30),,                                                            
+      tmin_adj = pmax(tmin_deg_c, 10),
+      tavg_adj = (tmax_adj + tmin_adj) / 2,
+      gdd = pmax(tavg_adj - 10, 0)) %>%
+    filter(date >= plant_date, date <= harvest_date) %>%     #filtering the data based on growing season
+    group_by(site, year, month) %>%
+    summarise(
+      prcp_mm = sum(prcp_mm_day, na.rm = TRUE),
+      tmax_deg_c_mean = mean(tmax_deg_c, na.rm = TRUE),
+      tmin_deg_c_mean = mean(tmin_deg_c, na.rm = TRUE),
+      srad_w_m_2_mean = mean(srad_w_m_2, na.rm = TRUE),
+      gdd  = sum(gdd, na.rm = TRUE),
+      .groups = "drop") 
+  
+  return(monthly_weather)
+}
+  
+
+
+  weather_monthly_training <- corn_base_training %>%
+    distinct(site,                  #To not repeat the same weather data
+             latitude, 
+             longitude, 
+             year, 
+             date_planted, 
+             date_harvested) %>%
+    pmap_dfr(~ daymet(
+    site = ..1,
+    lat = ..2,
+    lon = ..3,
+    year = ..4,
+    plant_date = ..5,
+    harvest_date = ..6
+  )) %>%
+    select(year, site, everything())  %>%
+    pivot_wider(names_from = month,
+                values_from = prcp_mm:gdd,
+                names_glue = "{.value}_{month}",
+                values_fn = mean
+                )
+  
+  #Checking output:
+  
+ write.csv(weather_monthly_training, here("data", "weather_monthly_training.csv"), row.names = FALSE)
+  
+  #Merging corn_base_training data set with weather_monthly_training:
+  
+  corn_training <- corn_base_training %>%
+   select(-latitude,-longitude) %>%
+   left_join(weather_monthly_training, by = c("year", "site"))
+  
+ write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
+  
+```
+
+#6. Correcting the yield based on grain moisture.
+
+```{r}
+#| message: false
+#| warning: false
+
+ #Corn should be sold with 15% of moisture. Based on that, we need to calculate the yield using the following formula:
+ 
+ #Creating a function:
+ #Corrected_yield = harvested yield (Mg_ha) x ((100 - Harvested Grain Moisture) / (100 - Standard Moisture))
+
+    yield_correction <- function(yield, grain_moisture, standard_moisture = 15) {
+      yield * ((100 - grain_moisture) / (100 - standard_moisture))
+    }
+
+ #Applying the function  and rounding the numbers from weather data columns (one decimal point)
+    
+    corn_training <- corn_training %>%
+      mutate(yield_mg_ha = yield_correction(yield_mg_ha, grain_moisture)) %>%
+      select(-grain_moisture) %>%
+      mutate(across(.cols = c(6, 12:60),
+                    ~round(., 1)))
+     
+ 
+ #Output:
+    
+   #write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
+    
+```
+
+#7. Ridge plot to visualize the distribution of all variable over month.
+
+```{r}
+#| message: false
+#| warning: false
+
+
+ weather_long <- corn_training %>%
+   pivot_longer(
+    cols = c(
+      starts_with("prcp_mm_"),
+      starts_with("tmax_deg_c_mean_"),
+      starts_with("tmin_deg_c_mean_"),
+      starts_with("srad_w_m_2_mean_"),
+      starts_with("gdd_")
+    ),
+    names_to = c("variable", "month"),
+    names_pattern = "^(.*)_([A-Za-z]+)$",
+    values_to = "value"
+  ) %>%
+  mutate(
+    month = factor(
+      month,
+      levels = c("Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    ),
+    variable = factor(
+      variable,
+      levels = c(
+        "prcp_mm",
+        "tmax_deg_c_mean",
+        "tmin_deg_c_mean",
+        "srad_w_m_2_mean",
+        "gdd"
+      ),
+      labels = c(
+        "Precipitation (mm)",
+        "Mean Tmax (°C)",
+        "Mean Tmin (°C)",
+        "Mean Solar Radiation (W/m²)",
+        "GDD"
+      )
+    )
+  )
+ 
+ #view(weather_long)
+ 
+  weather_long_plot <- ggplot(weather_long,
+        aes(x = value,
+            y = month,
+            fill = month
+            )) + 
+   geom_density_ridges(scale = 3,
+                       rel_min_height = 0.01,
+                       na.rm = T
+                       ) +
+   facet_wrap(~variable, scales = "free_x", ncol = 2) +
+   scale_fill_viridis_d(option = "C",
+                        alpha = 0.5) +
+   theme(legend.position = "none") +
+   labs(x = "Value",
+        y = "Month",
+        title = "Density Distribuition of Monthly Weather Variables"
+        )
+ 
+ 
+   ggsave(
+   filename = "ridge_plot_weather.jpeg",
+   plot = weather_long_plot,
+   width = 10,
+   height = 6,
+   dpi = 600)
+   
+  
+```
+
+
+# 8 xgboost Training
+```{r}
+#| message: false
+#| warning: false
+#install.packages("xgboost") #new pacakage
+library(tidymodels)   # Core framework for modeling (includes recipes, workflows, parsnip, etc.)
+library(finetune)     # Additional tuning strategies (e.g., racing, ANOVA-based tuning)
+library(vip)          # For plotting variable importance from fitted models
+library(xgboost)      # XGBoost implementation in R
+library(ranger)       # Fast implementation of Random Forests
+library(tidyverse)    # Data wrangling and visualization
+library(doParallel)   # For parallel computing (useful during resampling/tuning)
+library(caret)       # Other great library for Machine Learning 
+```
+
+
+```{r}
+set.seed(9678965) # Setting seed to get reproducible results 
+corn_split <- initial_split
+  initial_split (
+  corn_base_training, 
+  prop = .7,
+  strata = yield_mg_ha # proption of split same as previous codes
+  ) 
+  
+corn_split
+```
+
+```{r corn Train}
+corn_train <- training(corn_split)  # 70% of data
+corn_train #This is your traing data frame
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+>>>>>>> 9fa4ca353f6853673cabc5b79fac089eeb192c78
 

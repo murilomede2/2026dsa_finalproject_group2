@@ -1,0 +1,28 @@
+---
+title: "Feature Engineering - Final Project"
+format: html
+editor: visual
+---
+
+# 1. Loading Packages.
+
+```{r}
+#| label: Nasa Power
+#| message: false
+#| warning: false
+
+library(nasapower)
+library(sf)
+library(tidymodels)
+library(USAboundaries)
+```
+
+# 2. Pulling Weather Data.
+
+```{r}
+#| message: false
+#| warning: false
+
+
+
+```
