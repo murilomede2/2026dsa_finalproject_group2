@@ -57,7 +57,7 @@ corn_recipe <- recipe(yield_mg_ha ~ ., data = corn_train) %>% # Remove identifie
   step_rm(
     year,       # Remove year identifier
     site,       # Remove site identifier
-    matches("Jan|Feb|Mar|Apr|Nov|Dec")  # Remove non-growing season months
+    matches("Jan|Feb|Mar|Apr|Nov|Dec"),# Remove non-growing season months
   )
 corn_recipe
 ```
@@ -246,4 +246,53 @@ final_fit %>%
 ```{r}
 final_fit %>%
   collect_metrics()
+```
+
+```{r}
+final_spec %>%
+  fit(yield_mg_ha ~ .,
+      data = bake(corn_prep, 
+                  corn_train)) %>%
+  augment(new_data = bake(corn_prep, 
+                          corn_train)) %>% 
+  rmse(yield_mg_ha, .pred) %>%
+  bind_rows(
+    
+    
+# R2
+final_spec %>%
+  fit(yield_mg_ha ~ .,
+      data = bake(corn_prep, 
+                  corn_train)) %>%
+  augment(new_data = bake(corn_prep, 
+                          corn_train)) %>% 
+  rsq(yield_mg_ha, .pred))
+```
+
+```{r}
+final_fit %>%
+  collect_predictions() %>%
+  ggplot(aes(x = yield_mg_ha,
+             y = .pred)) +
+  geom_point() +
+  geom_abline() +
+  geom_smooth(method = "lm") +
+  scale_x_continuous(limits = c(20, 40)) +
+  scale_y_continuous(limits = c(20, 40)) 
+```
+
+```{r}
+final_spec %>%
+  fit(yield_mg_ha ~ .,
+         data = bake(corn_prep, corn_train)) %>% #There little change in variable improtance if you use full dataset
+    vi() %>%
+  mutate(
+    Variable = fct_reorder(Variable, 
+                           Importance)
+  ) %>%
+  ggplot(aes(x = Importance, 
+             y = Variable)) +
+  geom_col() +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(y = NULL)
 ```
