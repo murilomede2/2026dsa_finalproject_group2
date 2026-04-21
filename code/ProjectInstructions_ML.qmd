@@ -509,7 +509,7 @@ options(timeout = 300)
     
 ```
 
-#7. Ridge plot to visualize the distribution of all variable over month.
+#7. Ridge plot to visualize the distribution of all weather variable over month.
 
 ```{r}
 #| message: false
@@ -551,8 +551,9 @@ options(timeout = 300)
         "GDD"
       )
     )
-  )
+  ) 
  
+ #Checking the data set before plotting:
  #view(weather_long)
  
   weather_long_plot <- ggplot(weather_long,
@@ -571,17 +572,69 @@ options(timeout = 300)
    labs(x = "Value",
         y = "Month",
         title = "Density Distribuition of Monthly Weather Variables"
-        )
+        ) +
+     scale_y_discrete(limits = rev(levels(weather_long$month)))
  
  
    ggsave(
-   filename = "ridge_plot_weather.jpeg",
+   filename = here("output", "ridge_plot_weather.jpeg"),
    plot = weather_long_plot,
    width = 10,
    height = 6,
    dpi = 600)
    
-  
+```
+
+#8. Ridge plot to visualize the distribution of all soil variable over month.
+
+```{r}
+#| message: false
+#| warning: false
+
+ soil_long <- corn_training %>%
+   pivot_longer(
+    cols = c(7:10),
+    names_to = "soil_variable",
+    values_to = "value") %>%
+  mutate(
+    soil_variable = factor(
+      soil_variable,
+      levels = c("soil_ph", "om_pct", "soilk_ppm", "soilp_ppm"),
+      labels = c("Soil pH", "Organic Matter (%)", "Soil K (ppm)", "Soil P (ppm)"
+      )
+    ))
+ 
+ #Checking the data set before plotting:
+ #View(soil_long)
+ 
+  ridge_plot_soil <- ggplot(soil_long,
+        aes(x = value,
+            y = soil_variable,
+            fill = soil_variable
+            )) + 
+   geom_density_ridges(scale = 3,
+                       rel_min_height = 0.01,
+                       na.rm = T
+                       ) +
+   facet_wrap(~soil_variable, scales = "free_x", ncol = 2) +
+   scale_fill_viridis_d(option = "C",
+                        alpha = 0.5) +
+   theme(legend.position = "none") +
+   labs(x = "Value",
+        y = "Soil Variables",
+        title = "Density Distribuition of Soil Variables"
+        ) +
+     scale_y_discrete(limits = rev(levels(soil_long$soil_variable)))
+ 
+ 
+   ggsave(
+   filename = here("output", "ridge_plot_soil.jpeg"),
+   plot = ridge_plot_soil,
+   width = 10,
+   height = 6,
+   dpi = 600)
+
+
 ```
 
 
@@ -646,5 +699,8 @@ corn_train #This is your traing data frame
 
 
 
+<<<<<<< HEAD
 >>>>>>> 9fa4ca353f6853673cabc5b79fac089eeb192c78
 
+=======
+>>>>>>> 7800d7f029378354531fcea33ae8ebf4f7138029
