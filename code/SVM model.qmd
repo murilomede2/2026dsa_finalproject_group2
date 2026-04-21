@@ -25,3 +25,22 @@ library("e1071")
 #install.packages("kernlab")
 library(kernlab)
 ```
+
+```{r}
+# 1. split data (70% train, 30% test) 
+set.seed(123) 
+index <- sample(1:nrow(iris), 0.7 * nrow(iris))
+```
+
+```{r}
+tuned_model <- tune(svm, Species ~ ., data = train_data, 
+                    ranges = list(cost = c(0.1, 1, 10, 100), 
+                                  gamma = c(0.5, 1, 2)))
+
+# View best parameters
+summary(tuned_model)
+
+# Use the best model
+final_model <- tuned_model$best.model
+
+```
