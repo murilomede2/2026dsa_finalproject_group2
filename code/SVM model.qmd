@@ -10,18 +10,310 @@ editor: visual
 ```{r}
 #| message: false
 #| warning: false
-#install.packages("xgboost") #new pacakage
+
 library(tidymodels)   # Core framework for modeling (includes recipes, workflows, parsnip, etc.)
 library(finetune)     # Additional tuning strategies (e.g., racing, ANOVA-based tuning)
 library(vip)          # For plotting variable importance from fitted models
-library(xgboost)      # XGBoost implementation in R
 library(ranger)       # Fast implementation of Random Forests
 library(tidyverse)    # Data wrangling and visualization
 library(doParallel)   # For parallel computing (useful during resampling/tuning)
 library(caret)       # Other great library for Machine Learning 
-install.packages("e1071")
-library("e1071")
-#install.packages("kernlab"")
-#install.packages("kernlab")
-library(kernlab)
+library(kernlab)      # SVM engine used by tidymodels
+# install.packages("e1071")
+# library("e1071")
 ```
+
+```{r}
+
+corn_split <- read.csv(here("data", "corn_training_reduced.csv"))
+
+set.seed(9678965) # Setting seed to get reproducible results 
+
+corn_split <- initial_split(corn_split, 
+  prop = .7,
+  strata = yield_mg_ha) # proportion of split same as previous codes
+  
+corn_split
+```
+
+```{r}
+
+corn_train <- training(corn_split)  # 70% of data
+
+corn_train #This is your training data frame
+
+```
+
+```{r}
+corn_test <- testing(corn_split)
+
+corn_test
+
+```
+
+```{r}
+
+
+ggplot() +
+  geom_density(data = corn_train, 
+               aes(x = yield_mg_ha),
+               color = "red") +
+  geom_density(data = corn_test, 
+               aes(x = yield_mg_ha),
+               color = "blue") 
+
+
+```
+
+```{r}
+
+# Create recipe for data preprocessing
+corn_recipe <- recipe(yield_mg_ha ~ ., data = corn_train) %>%
+  step_normalize(all_numeric_predictors())    #We should normalize our variables for SVM
+
+corn_recipe
+
+```
+
+```{r}
+
+
+# Prep the recipe to estimate any required statistics
+corn_prep <- corn_recipe %>% 
+  prep()
+
+# Examine preprocessing steps
+corn_prep
+
+
+```
+
+```{r}
+
+
+svm_spec <- # Specifying SVM as our model type, asking to tune the hyperparameters
+  svm_rbf(                 # Most common choice for nonlinear regression
+    cost = tune(),        # Controls model complexity
+    rbf_sigma = tune()    # Controls the smoothness of the radial kernel
+  ) %>%
+  # specify engine
+  set_engine("kernlab") %>%
+  # Set to mode
+  set_mode("regression")
+
+svm_spec
+
+```
+
+```{r}
+
+set.seed(657) #34549
+
+resampling_foldcv <- vfold_cv(corn_train, # Create 10-fold cross-validation resampling object from training data
+                              v = 10)
+
+resampling_foldcv
+resampling_foldcv$splits[[1]]
+
+```
+
+```{r}
+
+svm_grid <- grid_latin_hypercube(
+  cost(),
+  rbf_sigma(),
+  size = 100
+)
+
+svm_grid
+
+```
+
+```{r}
+
+ggplot(data = svm_grid,
+       aes(x = cost, 
+           y = rbf_sigma)) +
+  geom_point(alpha = .5)
+
+
+```
+
+```{r}
+
+set.seed(6576)
+registerDoParallel(cores = parallel::detectCores() - 1)
+
+svm_res <- tune_race_anova(
+  object = svm_spec,
+  preprocessor = corn_recipe,
+  resamples = resampling_foldcv,
+  grid = svm_grid,
+  control = control_race(save_pred = TRUE)
+)
+
+stopImplicitCluster()
+
+beepr::beep()
+svm_res$.metrics[[2]]
+
+```
+
+```{r}
+
+plot_race(svm_res)
+
+```
+
+
+```{r}
+
+# Based on lowest RMSE
+best_rmse <- svm_res %>% 
+  select_best(metric = "rmse") %>% 
+  mutate(source = "best_rmse")
+
+best_rmse
+
+```
+
+
+```{r}
+
+best_rmse_pct_loss <- svm_res %>% 
+  select_by_pct_loss(
+    cost,
+    metric = "rmse",
+    limit = 1
+  ) %>% 
+  mutate(source = "best_rmse_pct_loss")
+
+best_rmse_pct_loss
+
+```
+
+```{r}
+
+# Based on lowest RMSE within 1 se
+best_rmse_one_std_err <- svm_res %>% 
+  select_by_one_std_err(
+    metric = "rmse",
+    cost
+  ) %>% 
+  mutate(source = "best_rmse_one_std_err")
+
+best_rmse_one_std_err
+
+```
+
+```{r}
+
+# Based on greatest R2
+best_r2 <- svm_res %>% 
+  select_best(metric = "rsq") %>% 
+  mutate(source = "best_r2")
+
+best_r2
+
+```
+
+```{r}
+
+# Based on lowest R2 within 1% loss
+best_r2_pct_loss <- svm_res %>% 
+  select_by_pct_loss(
+    cost,
+    metric = "rsq",
+    limit = 1
+  ) %>% 
+  mutate(source = "best_r2_pct_loss")
+
+best_r2_pct_loss
+
+```
+
+```{r}
+
+# Based on lowest R2 within 1 se
+best_r2_one_std_error <- svm_res %>% 
+  select_by_one_std_err(
+    metric = "rsq",
+    cost
+  ) %>%
+  mutate(source = "best_r2_one_std_error")
+
+best_r2_one_std_error
+
+```
+
+```{r}
+
+best_rmse %>% 
+  bind_rows(
+    best_rmse_pct_loss, 
+    best_rmse_one_std_err, 
+    best_r2, 
+    best_r2_pct_loss, 
+    best_r2_one_std_error
+  )
+
+```
+
+```{r}
+
+final_spec <- svm_rbf(
+  cost = best_r2$cost,               # Cost parameter
+  rbf_sigma = best_r2$rbf_sigma      # Radial basis kernel parameter
+) %>%
+  set_engine("kernlab") %>%
+  set_mode("regression")
+
+final_spec
+
+```
+
+```{r}
+
+set.seed(877)
+
+final_fit <- last_fit(
+  final_spec,
+  corn_recipe,
+  split = corn_split
+)
+
+final_fit
+
+```
+
+```{r}
+
+collect_metrics(final_fit)
+
+```
+
+```{r}
+
+collect_predictions(final_fit) %>%
+  ggplot(aes(x = yield_mg_ha, y = .pred)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = 2) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(
+    x = "Observed Yield",
+    y = "Predicted Yield",
+    title = "Observed vs Predicted Yield - SVM"
+  ) +
+  theme_minimal()
+
+```
+
+
+
+
+
+
+
+
+
+

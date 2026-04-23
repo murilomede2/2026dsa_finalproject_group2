@@ -17,27 +17,34 @@ library(xgboost)      # XGBoost implementation in R
 library(ranger)       # Fast implementation of Random Forests
 library(tidyverse)    # Data wrangling and visualization
 library(doParallel)   # For parallel computing (useful during resampling/tuning)
-library(caret)       # Other great library for Machine Learning 
+library(caret)  # Other great library for Machine Learning 
+library(here)
+library(readr)
 ```
 
 ```{r}
+
+corn_split <- read.csv(here("data", "corn_training_reduced.csv"))
+
 set.seed(9678965) # Setting seed to get reproducible results 
 
-corn_split <- initial_split(corn_base_training, 
+corn_split <- initial_split(corn_split, 
   prop = .7,
-  strata = yield_mg_ha) # proption of split same as previous codes
+  strata = yield_mg_ha) # proportion of split same as previous codes
   
 corn_split
 ```
 
 ```{r corn Train}
 corn_train <- training(corn_split)  # 70% of data
-corn_train #This is your traing data frame
+corn_train #This is your training data frame
 ```
 
 ```{r corn testing}
 corn_test <- testing(corn_split)
+
 corn_test
+
 ```
 
 ```{r distribution}
@@ -49,17 +56,15 @@ ggplot() +
   geom_density(data = corn_test, 
                aes(x = yield_mg_ha),
                color = "blue") 
+
 ```
 
 ```{r recipe}
 # Create recipe for data preprocessing
-corn_recipe <- recipe(yield_mg_ha ~ ., data = corn_train) %>% # Remove identifier columns and months not in growing season
-  step_rm(
-    year,       # Remove year identifier
-    site,       # Remove site identifier
-    matches("Jan|Feb|Mar|Apr|Nov|Dec"),# Remove non-growing season months
-  )
+corn_recipe <- recipe(yield_mg_ha ~ ., data = corn_train)
+
 corn_recipe
+
 ```
 
 ```{r}
@@ -70,6 +75,7 @@ corn_prep <- corn_recipe %>%
 
 # Examine preprocessing steps
 corn_prep
+
 ```
 
 ```{r}
@@ -91,6 +97,7 @@ xgb_spec <- #Specifying XgBoost as our model type, asking to tune the hyperparam
   set_mode("regression")
 
 xgb_spec
+
 ```
 
 ```{r}
@@ -101,6 +108,7 @@ resampling_foldcv <- vfold_cv(corn_train, # Create 5-fold cross-validation resam
 
 resampling_foldcv
 resampling_foldcv$splits[[1]]
+
 ```
 
 ```{r}
@@ -113,6 +121,7 @@ xgb_grid <- grid_latin_hypercube(
 )
 
 xgb_grid
+
 ```
 
 ```{r}
@@ -123,6 +132,7 @@ ggplot(data = xgb_grid,
                  size = trees),
              alpha = .5,
              show.legend = FALSE)
+
 ```
 
 ```{r}
@@ -139,6 +149,7 @@ stopImplicitCluster
 
 beepr::beep()
 xgb_res$.metrics[[2]]
+
 ```
 
 ```{r}
@@ -164,6 +175,7 @@ best_rmse_pct_loss <- xgb_res %>%
   mutate(source = "best_rmse_pct_loss")
 
 best_rmse_pct_loss
+
 ```
 
 ```{r}
@@ -176,6 +188,7 @@ best_rmse_one_std_err <- xgb_res %>%
   mutate(source = "best_rmse_one_std_err")
 
 best_rmse_one_std_err
+
 ```
 
 ```{r}
@@ -185,6 +198,7 @@ best_r2 <- xgb_res %>%
   mutate(source = "best_r2")
 
 best_r2
+
 ```
 
 ```{r}
@@ -197,6 +211,7 @@ best_r2_pct_loss <- xgb_res %>%
   mutate(source = "best_r2_pct_loss")
 
 best_r2_pct_loss
+
 ```
 
 ```{r}
@@ -209,6 +224,7 @@ best_r2_one_std_error <- xgb_res %>%
   mutate(source = "best_r2_one_std_error")
 
 best_r2_one_std_error
+
 ```
 
 ```{r}
@@ -218,6 +234,7 @@ best_rmse %>%
             best_r2, 
             best_r2_pct_loss, 
             best_r2_one_std_error)
+
 ```
 
 ```{r}
@@ -231,21 +248,24 @@ final_spec <- boost_tree(
   set_mode("regression")
 
 final_spec
+
 ```
 
 ```{r}
 set.seed(877)
 final_fit <- last_fit(final_spec,
-                weather_recipe,
-                split = weather_split)
+                corn_recipe,
+                split = corn_split)
 
 final_fit %>%
   collect_predictions()
+
 ```
 
 ```{r}
 final_fit %>%
   collect_metrics()
+
 ```
 
 ```{r}
@@ -267,6 +287,7 @@ final_spec %>%
   augment(new_data = bake(corn_prep, 
                           corn_train)) %>% 
   rsq(yield_mg_ha, .pred))
+
 ```
 
 ```{r}
@@ -279,12 +300,13 @@ final_fit %>%
   geom_smooth(method = "lm") +
   scale_x_continuous(limits = c(20, 40)) +
   scale_y_continuous(limits = c(20, 40)) 
+
 ```
 
 ```{r}
 final_spec %>%
   fit(yield_mg_ha ~ .,
-         data = bake(corn_prep, corn_train)) %>% #There little change in variable improtance if you use full dataset
+         data = bake(corn_prep, corn_train)) %>% #There little change in variable importance if you use full dataset
     vi() %>%
   mutate(
     Variable = fct_reorder(Variable, 
@@ -295,4 +317,5 @@ final_spec %>%
   geom_col() +
   scale_x_continuous(expand = c(0, 0)) +
   labs(y = NULL)
+
 ```
