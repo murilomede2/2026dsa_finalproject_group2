@@ -19,6 +19,7 @@ library(tidyverse)    # Data wrangling and visualization
 library(doParallel)   # For parallel computing (useful during resampling/tuning)
 library(caret)       # Other great library for Machine Learning 
 library(kernlab)      # SVM engine used by tidymodels
+library(here)
 
 ```
 
@@ -152,7 +153,7 @@ svm_res <- tune_race_anova(
 stopImplicitCluster()
 
 beepr::beep()
-svm_res$.metrics[[2]]
+svm_res$.metrics[[1]]
 
 ```
 
@@ -214,7 +215,7 @@ best_r2_svm
 
 ```{r}
 
-# Based on lowest R2 within 1% loss
+# Based on greatest R2 within 1% loss
 best_r2_pct_loss_svm <- svm_res %>% 
   select_by_pct_loss(
     cost,
@@ -257,8 +258,8 @@ best_rmse_svm %>%
 ```{r}
 
 final_spec_svm <- svm_rbf(
-  cost = best_r2_svm$cost,               # Cost parameter
-  rbf_sigma = best_r2_svm$rbf_sigma      # Radial basis kernel parameter
+  cost = best_rmse_svm$cost,               # Cost parameter
+  rbf_sigma = best_rmse_svm$rbf_sigma      # Radial basis kernel parameter
 ) %>%
   set_engine("kernlab") %>%
   set_mode("regression")
@@ -271,19 +272,41 @@ final_spec_svm
 
 set.seed(877)
 
-final_fit_svm <- last_fit(
-  final_spec_svm,
-  corn_recipe_svm,
-  split = corn_split_svm
-)
+  final_fit_svm <- last_fit(final_spec_svm,
+                            corn_recipe_svm,
+                            split = corn_split_svm)
 
-final_fit_svm
+final_fit_svm %>%
+  collect_predictions()
 
 ```
 
 ```{r}
 
-collect_metrics(final_fit_svm)
+   final_fit_svm %>%
+     collect_metrics()
+
+```
+
+```{r}
+   
+final_spec_svm %>%
+  fit(yield_mg_ha ~ .,
+      data = bake(corn_prep_svm, 
+                  corn_train_svm)) %>%
+  augment(new_data = bake(corn_prep_svm, 
+                          corn_train_svm)) %>% 
+  rmse(yield_mg_ha, .pred) %>%
+  bind_rows(
+    
+    # R2
+    final_spec_svm %>%
+      fit(yield_mg_ha ~ .,
+          data = bake(corn_prep_svm, 
+                      corn_train_svm)) %>%
+      augment(new_data = bake(corn_prep_svm, 
+                              corn_train_svm)) %>% 
+      rsq(yield_mg_ha, .pred))
 
 ```
 
@@ -302,3 +325,36 @@ collect_predictions(final_fit_svm) %>%
   theme_minimal()
 
 ```
+
+```{r}
+
+library(vip)
+
+svm_fit <- final_spec_svm %>%
+  fit(
+    yield_mg_ha ~ .,
+    data = bake(corn_prep_svm, corn_train_svm)
+  )
+
+train_baked_svm <- bake(corn_prep_svm, corn_train_svm)
+
+vip::vi_permute(
+  object = svm_fit,
+  train = train_baked,
+  target = "yield_mg_ha",
+  metric = "rmse",
+  pred_wrapper = function(object, newdata) {
+    predict(object, newdata)$.pred
+  },
+  nsim = 10)
+
+```
+
+
+
+
+
+
+
+
+

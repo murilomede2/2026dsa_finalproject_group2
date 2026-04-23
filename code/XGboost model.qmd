@@ -85,7 +85,7 @@ corn_prep_xgb
 xgb_spec <- #Specifying XgBoost as our model type, asking to tune the hyperparameters
   boost_tree(
    # Total number of boosting iterations
-    tree = tune(), 
+    trees = tune(), 
          # Maximum depth of each tree
     tree_depth = tune(),
              # Minimum samples required to split a node
@@ -147,7 +147,7 @@ xgb_res <- tune_race_anova(object = xgb_spec,
                       grid = xgb_grid,
                       control = control_race(save_pred = TRUE))
 
-stopImplicitCluster
+stopImplicitCluster()
 
 beepr::beep()
 xgb_res$.metrics[[1]]
@@ -295,25 +295,26 @@ final_spec_xgb %>%
 ```{r}
 final_fit_xgb %>%
   collect_predictions() %>%
-  ggplot(aes(x = yield_mg_ha,
-             y = .pred)) +
-  geom_point() +
-  geom_abline() +
-  geom_smooth(method = "lm") +
-  scale_x_continuous(limits = c(20, 40)) +
-  scale_y_continuous(limits = c(20, 40)) 
+  ggplot(aes(x = yield_mg_ha, y = .pred)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = 2) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    x = "Observed Yield (Mg/ha)",
+    y = "Predicted Yield (Mg/ha)"
+  ) +
+  theme_minimal()
 
 ```
 
 ```{r}
 final_spec_xgb %>%
   fit(yield_mg_ha ~ .,
-         data = bake(corn_prep_xgb, corn_train_xgb)) %>% #There little change in variable importance if you use full dataset
+    data = bake(corn_prep_xgb, corn_train_xgb)) %>% #There little change in variable importance if you use full dataset
     vi() %>%
-  mutate(
-    Variable = fct_reorder(Variable, 
-                           Importance)
-  ) %>%
+    mutate(
+      Variable = fct_reorder(Variable, 
+                           Importance)) %>%
   ggplot(aes(x = Importance, 
              y = Variable)) +
   geom_col() +
