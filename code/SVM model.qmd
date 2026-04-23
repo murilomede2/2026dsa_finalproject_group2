@@ -26,14 +26,53 @@ library("e1071")
 library(kernlab)
 ```
 
+Preprocess Training
+
 ```{r}
-# 1. split data (70% train, 30% test) 
-set.seed(123) 
-index <- sample(1:nrow(iris), 0.7 * nrow(iris))
+set.seed(9678965) # Setting seed to get reproducible results 
+
+corn_split <- initial_split(corn_training_reduced,
+                            prop = .7,
+                            strata = yield_mg_ha) 
+# proption of split same as previous codes
+  
+corn_split
 ```
 
 ```{r}
-tuned_model <- tune(svm, Species ~ ., data = train_data, 
+corn_train <- training(corn_split)  # 70% of data
+corn_train #This is your traing data frame
+```
+
+```{r}
+corn_test <- testing(corn_split)
+corn_test
+```
+
+```{r}
+svm_recipe <- recipe(yield_mg_ha ~ ., data = corn_train) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_center(all_numeric_predictors()) %>%
+  step_scale(all_numeric_predictors()) %>%
+  step_zv(all_predictors())
+summary(svm_recipe)
+```
+
+Prepare Recipe
+
+```{r}
+svm_recipe_prepped <- prep(svm_recipe, training = corn_training_reduced)
+
+svm_recipe_prepped
+```
+
+```{r}
+Train_processed <- bake(svm_recipe_prepped, new_data = iris_train)
+test_processed  <- bake(svm_recipe_prepped, new_data = iris_test)
+```
+
+```{r}
+tuned_model <- tune(svm, yield_mg_ha ~ ., data = train_data, 
                     ranges = list(cost = c(0.1, 1, 10, 100), 
                                   gamma = c(0.5, 1, 2)))
 
