@@ -287,7 +287,7 @@ options(timeout = 300)
     mutate(site = site,
       date = as.Date(paste(year, yday, sep = "-"), format = "%Y-%j"),
       month = month(date, label = T, abbr = T),                 #weather data from each month
-      tmax_adj = pmin(tmax_deg_c, 30),,                                                            
+      tmax_adj = pmin(tmax_deg_c, 30),                                                            
       tmin_adj = pmax(tmin_deg_c, 10),
       tavg_adj = (tmax_adj + tmin_adj) / 2,
       gdd = pmax(tavg_adj - 10, 0)) %>%
@@ -497,8 +497,6 @@ options(timeout = 300)
 
 ```
 
-
-# 8 xgboost Training
 ```{r}
 #| message: false
 #| warning: false
@@ -512,9 +510,3 @@ View(corn_training_reduced)
 
 
 ```
-
-<<<<<<< HEAD
->>>>>>> 9fa4ca353f6853673cabc5b79fac089eeb192c78
-
-=======
->>>>>>> 7800d7f029378354531fcea33ae8ebf4f7138029
