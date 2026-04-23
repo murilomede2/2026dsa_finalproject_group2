@@ -67,19 +67,32 @@ svm_recipe_prepped
 ```
 
 ```{r}
-Train_processed <- bake(svm_recipe_prepped, new_data = iris_train)
-test_processed  <- bake(svm_recipe_prepped, new_data = iris_test)
+Train_processed <- bake(svm_recipe_prepped, new_data = corn_train)
+test_processed  <- bake(svm_recipe_prepped, new_data = corn_test)
+```
+
+Tuning Hyperparameters
+
+```{r}
+xgb_spec <- #Specifying XgBoost as our model type, asking to tune the hyperparameters
+  boost_tree(
+   # Total number of boosting iterations
+    tree = tune(), 
+         # Maximum depth of each tree
+    tree_depth = tune(),
+             # Minimum samples required to split a node
+    min_n = tune(),
+        # Step size shrinkage for each boosting step
+    learn_rate = tune()
+) %>%
+        #specify engine 
+  set_engine("xgboost") %>%
+       # Set to mode
+  set_mode("regression")
+
+xgb_spec
 ```
 
 ```{r}
-tuned_model <- tune(svm, yield_mg_ha ~ ., data = train_data, 
-                    ranges = list(cost = c(0.1, 1, 10, 100), 
-                                  gamma = c(0.5, 1, 2)))
-
-# View best parameters
-summary(tuned_model)
-
-# Use the best model
-final_model <- tuned_model$best.model
 
 ```
