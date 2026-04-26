@@ -5,7 +5,6 @@ format:
     embed-resources: true
     toc: true
     theme: cerulean
-<<<<<<< HEAD
 author: Mia Gale and Murilo Matos
 ---
 
