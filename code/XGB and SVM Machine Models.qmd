@@ -19,7 +19,7 @@ library(xgboost)      # XGBoost implementation in R
 library(ranger)       # Fast implementation of Random Forests
 library(tidyverse)    # Data wrangling and visualization
 library(doParallel)   # For parallel computing (useful during resampling/tuning)
-library(caret)  # Other great library for Machine Learning 
+library(caret)        # Other great library for Machine Learning 
 library(here)
 library(readr)
 ```
@@ -53,7 +53,7 @@ corn_test_xgb <- testing(corn_split_xgb)
 corn_test_xgb
 ```
 
-### b. Distribution of target variable
+### b) Distribution of target variable
 
 ```{r}
 ggplot() +
@@ -66,7 +66,7 @@ ggplot() +
 
 ```
 
-### c. Data processing with recipe
+### c) Data processing with recipe
 
 ```{r}
 # Create recipe for data preprocessing
@@ -89,7 +89,7 @@ corn_prep_xgb
 
 ## 2. Training
 
-### a. Model specification
+### a) Model specification
 
 ```{r}
 xgb_spec <- #Specifying XgBoost as our model type, asking to tune the hyperparameters
@@ -101,8 +101,7 @@ xgb_spec <- #Specifying XgBoost as our model type, asking to tune the hyperparam
              # Minimum samples required to split a node
     min_n = tune(),
         # Step size shrinkage for each boosting step
-    learn_rate = tune()
-) %>%
+    learn_rate = tune()) %>%
         #specify engine 
   set_engine("xgboost") %>%
        # Set to mode
@@ -112,7 +111,7 @@ xgb_spec
 
 ```
 
-### b. Cross-validation setup
+### b) Cross-validation setup
 
 ```{r}
 set.seed(657) #34549
@@ -125,7 +124,7 @@ resampling_foldcv$splits[[1]]
 
 ```
 
-### c. Hyperparameter grid with Latin Hypercube Sampling
+### c) Hyperparameter grid with Latin Hypercube Sampling
 
 ```{r}
 xgb_grid <- grid_latin_hypercube(
@@ -386,7 +385,7 @@ corn_split_svm
 
 corn_train_svm <- training(corn_split_svm)  # 70% of data
 
-corn_train_svm #This is your training data frame
+corn_train_svm 
 ```
 
 ```{r}
@@ -395,7 +394,7 @@ corn_test_svm <- testing(corn_split_svm)
 corn_test_svm
 ```
 
-### b. Distribution of target variable
+### b) Distribution of target variable
 
 ```{r}
 
@@ -410,7 +409,7 @@ ggplot() +
 
 ```
 
-### c. Data processing with recipe
+### c) Data processing with recipe
 
 ```{r}
 
@@ -435,7 +434,7 @@ corn_prep_svm
 
 ## 2. Training
 
-### a. Model specification
+### a) Model specification
 
 ```{r}
 
@@ -453,21 +452,21 @@ svm_spec
 
 ```
 
-### b. Cross-validation setup
+### b) Cross-validation setup
 
 ```{r}
 
-set.seed(657) #34549
+set.seed(657) 
 
 resampling_foldcv <- vfold_cv(corn_train_svm, # Create 10-fold cross-validation resampling object from training data
-                              v = 10)
+                              v = 5)
 
 resampling_foldcv
 resampling_foldcv$splits[[1]]
 
 ```
 
-### c. Hyperparameter grid with Latin Hypercube Sampling
+### c) Hyperparameter grid with Latin Hypercube Sampling
 
 ```{r}
 
@@ -690,13 +689,12 @@ collect_predictions(final_fit_svm) %>%
     title = "Observed vs Predicted Yield - SVM"
   ) +
   theme_minimal()
+
 ```
 
 ## 11. Variable Importance
 
 ```{r}
-
-library(vip)
 
 svm_fit <- final_spec_svm %>%
   fit(
@@ -715,5 +713,15 @@ vip::vi_permute(
     predict(object, newdata)$.pred
   },
   nsim = 10)
+
+```
+
+## 12. Transforming files to run in Sapelo (supercomputer)
+
+```{r}
+
+#From ".qmd" to ".R":
+
+knitr::purl("XGB and SVM Machine Models.qmd", output = "XGB_SVM_Sapelo_script.R", documentation = 0)
 
 ```
