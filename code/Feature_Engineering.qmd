@@ -28,11 +28,15 @@ library(sf)
 library(ggridges)
 library(ggplot2)
 
-meta_training_raw <- read.csv(here("data","training_meta.csv"))
+#meta_training_raw <- read.csv(here("data","training_meta.csv"))
 
-soil_training_raw <- read.csv(here("data","training_soil.csv"))
+#soil_training_raw <- read.csv(here("data","training_soil.csv"))
 
-trait_training_raw <- read.csv(here("data","training_trait.csv"))
+#trait_training_raw <- read.csv(here("data","training_trait.csv"))
+
+ meta_testing_raw_2024 <- read.csv(here("data", "testing_meta.csv"))
+ 
+ soil_testing_raw_2024 <- read.csv(here("data", "testing_soil.csv"))
 
 ```
   
@@ -45,14 +49,20 @@ trait_training_raw <- read.csv(here("data","training_trait.csv"))
 glimpse(meta_training_raw)
 glimpse(soil_training_raw)
 glimpse(trait_training_raw)
+glimpse(meta_testing_raw_2024)
+glimpse(soil_testing_raw_2024)
 
 names(meta_training_raw)
 names(soil_training_raw)
 names(trait_training_raw)
+names(meta_testing_raw_2024)
+glimpse(soil_testing_raw_2024)
 
 summary(meta_training_raw)
 summary(soil_training_raw)
 summary(trait_training_raw)
+summary(meta_testing_raw_2024)
+glimpse(soil_testing_raw_2024)
 
 ```
 # 3. Cleaning all the Datasets.
@@ -72,10 +82,17 @@ soil_training_clean <- clean_names(soil_training_raw) %>%
 
 trait_training_clean <- clean_names(trait_training_raw)
 
+meta_testing_clean_2024 <- clean_names(meta_testing_raw_2024) %>%
+  select(-previous_crop)
+
+soil_testing_clean_2024 <- clean_names(soil_testing_raw_2024) %>%
+  rename(soil_ph = soilp_h)
+
 
 names(meta_training_clean)
 names(soil_training_clean)
 names(trait_training_clean)
+names(meta_testing_clean_2024)
 ```
 
 ## 3.2. Function to Clean "Site" rows.
@@ -104,9 +121,12 @@ soil_training <- soil_training_clean %>%
 trait_training <- trait_training_clean %>%
   mutate(site = clean_site_rows(site)) 
 
+soil_testing_2024 <- soil_testing_clean_2024 %>%
+  mutate(site = clean_site_rows(site))
+
 #Checking if worked, and if there is any difference between the data sets within the "site" column:
 
-##OBS: sometimes this code will not print the output under the chunk. Try adding a pipe and the function "head()" and run. Afeter, you can remove this and run normally.
+##OBS: sometimes this code will not print the output under the chunk. Try adding a pipe and the function "head()" and run. After, you can remove this and run normally.
 
  meta_training %>%          
   distinct(site) %>%
@@ -117,6 +137,14 @@ trait_training <- trait_training_clean %>%
   arrange(site)
 
  trait_training %>%
+  distinct(site) %>%
+  arrange(site)
+ 
+ meta_testing_clean_2024 %>%
+  distinct(site) %>%
+  arrange(site)
+ 
+ soil_testing_clean_2024 %>%
   distinct(site) %>%
   arrange(site)
 
@@ -185,6 +213,22 @@ trait_training <- trait_training %>%
     yield_mg_ha = as.numeric(yield_mg_ha),
     grain_moisture = as.numeric(grain_moisture)
   )
+
+meta_testing_2024 <- meta_testing_clean_2024 %>%
+  mutate(
+    year = as.integer(year),
+    latitude = as.numeric(latitude),
+    longitude = as.numeric(longitude)
+  )
+
+soil_testing_2024 <- soil_testing_2024 %>%
+  mutate(
+    year = as.integer(year),
+    soil_ph = as.numeric(soil_ph),
+    om_pct = as.numeric(om_pct),
+    soilk_ppm = as.numeric(soilk_ppm),
+    soilp_ppm = as.numeric(soilp_ppm)
+  )
  
 ##Removing the extra 2014 rows in "meta" and "trait" data sets:
 
@@ -230,6 +274,7 @@ ggplot() +
                  y = latitude,
                  color = site))
 
+
 ##OBS: The ""GEH1", "ONH1", "ONH2", they are spots outside the USA.
 
 corn_base_training <- trait_training %>%
@@ -238,6 +283,10 @@ corn_base_training <- trait_training %>%
   select(longitude, latitude, everything()) %>%
   filter(!site %in% c("GEH1", "ONH1", "ONH2")) %>%      ##Removing sites that are not in the USA
   filter(if_all(c(latitude, longitude, date_planted, date_harvested), ~ !is.na(.)))
+
+corn_base_testing_2024 <- meta_testing_2024 %>%
+  left_join(soil_testing_2024, by = c("year", "site")) %>%
+  select(longitude, latitude, everything())
 
 #Double checking:
 
@@ -254,6 +303,7 @@ ggplot() +
 
  #write.csv(corn_base_training, here("data", "corn_base_training.csv"), row.names = FALSE )
 
+ #write.csv(corn_base_testing_2024, here("data", "corn_base_testing_2024.csv"), row.names = FALSE )
 
 ```
 
@@ -263,11 +313,82 @@ ggplot() +
 #| message: false
 #| warning: false
 
-#First need to check if there are NAs values within the columns we need to pull the weather data: site, longitude, latitude, year, date_planted, date_harvested
+#For training data:
+
+#First need to check if there are NAs values within the columns we need to pull the weather data: site, longitude, latitude, year, date_planted, date_harvested:
 
 options(timeout = 300)
 
-  daymet <- function(site, lat, lon, year, plant_date, harvest_date) {
+daymet <- function(site, lat, lon, year, plant_date, harvest_date) { 
+  weather <- download_daymet( site = site, 
+                              lat = lat, 
+                              lon = lon,
+                              start = year, 
+                              end = year, 
+                              internal = TRUE, 
+                              silent = TRUE ) 
+
+monthly_weather <- weather$data %>% 
+  as_tibble() %>%   
+  rename_with(~ gsub("\\.+", "_", .)) %>%                 #replace multiple dots in column names with "_" 
+  rename_with(~ gsub("_$", "", .)) %>%                    #remove trailing "_" 
+  rename_with(tolower) %>%                                #making all column names lower case 
+  mutate(site = site, 
+         date = as.Date(paste(year, yday, sep = "-"), 
+                        format = "%Y-%j"), 
+         month = month(date, 
+                       label = T, 
+                       abbr = T),                          #weather data from each month 
+         tmax_adj = pmin(tmax_deg_c, 30), 
+         tmin_adj = pmax(tmin_deg_c, 10), 
+         tavg_adj = (tmax_adj + tmin_adj) / 2, 
+         gdd = pmax(tavg_adj - 10, 0)) %>% 
+  filter(date >= plant_date, date <= harvest_date) %>%             #filtering the data based on growing season 
+  group_by(site, year, month) %>% 
+  summarise( prcp_mm = sum(prcp_mm_day, na.rm = TRUE), 
+             tmax_deg_c_mean = mean(tmax_deg_c, na.rm = TRUE), 
+             tmin_deg_c_mean = mean(tmin_deg_c, na.rm = TRUE), 
+             srad_w_m_2_mean = mean(srad_w_m_2, na.rm = TRUE), 
+             gdd = sum(gdd, na.rm = TRUE), .groups = "drop") 
+
+return(monthly_weather) } 
+
+
+weather_monthly_testing <- corn_base_testing_2024 %>% 
+  distinct(site,                                        #To not repeat the same weather data 
+           latitude, 
+           longitude, 
+           year, 
+           date_planted, 
+           date_harvested) %>% 
+  pmap_dfr(~ daymet( site = ..1,
+                     lat = ..2, 
+                     lon = ..3, 
+                     year = ..4, 
+                     plant_date = ..5, 
+                     harvest_date = ..6 )) %>% 
+  select(year, site, everything()) %>%
+  pivot_wider(names_from = month, 
+              values_from = prcp_mm:gdd, 
+              names_glue = "{.value}_{month}", 
+              values_fn = mean )
+
+#Checking output for training:
+  
+ #write.csv(weather_monthly_training, here("data", "weather_monthly_training.csv"), row.names = FALSE)
+  
+  #Merging corn_base_training data set with weather_monthly_training:
+  
+  corn_training <- corn_base_training %>%
+   select(-latitude,-longitude) %>%
+   left_join(weather_monthly_training, by = c("year", "site"))
+  
+ #write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
+
+
+#For testing data:
+
+  daymet <- function(site, lat, lon, year) {
   
   weather <- download_daymet(
     site = site,
@@ -286,12 +407,13 @@ options(timeout = 300)
     rename_with(tolower) %>%                     #making all column names lower case
     mutate(site = site,
       date = as.Date(paste(year, yday, sep = "-"), format = "%Y-%j"),
+      month_num = month(date),                                  #month number from 1 to 12
       month = month(date, label = T, abbr = T),                 #weather data from each month
       tmax_adj = pmin(tmax_deg_c, 30),                                                            
       tmin_adj = pmax(tmin_deg_c, 10),
       tavg_adj = (tmax_adj + tmin_adj) / 2,
       gdd = pmax(tavg_adj - 10, 0)) %>%
-    filter(date >= plant_date, date <= harvest_date) %>%     #filtering the data based on growing season
+    filter(month_num >= 4, month_num <= 12) %>%     #filtering the data based on growing season (April to December)
     group_by(site, year, month) %>%
     summarise(
       prcp_mm = sum(prcp_mm_day, na.rm = TRUE),
@@ -304,42 +426,37 @@ options(timeout = 300)
   return(monthly_weather)
 }
   
-
-
-  weather_monthly_training <- corn_base_training %>%
+  
+  weather_monthly_testing_2024 <- corn_base_testing_2024 %>%
     distinct(site,                  #To not repeat the same weather data
              latitude, 
              longitude, 
-             year, 
-             date_planted, 
-             date_harvested) %>%
+             year) %>%
     pmap_dfr(~ daymet(
     site = ..1,
     lat = ..2,
     lon = ..3,
-    year = ..4,
-    plant_date = ..5,
-    harvest_date = ..6
-  )) %>%
+    year = ..4)) %>%
     select(year, site, everything())  %>%
     pivot_wider(names_from = month,
                 values_from = prcp_mm:gdd,
                 names_glue = "{.value}_{month}",
                 values_fn = mean
-                )
+                ) %>%
+    mutate(across(.cols = c(3:47),
+                    ~round(., 1)))
   
-  #Checking output:
+  #Checking output for testing:
   
- write.csv(weather_monthly_training, here("data", "weather_monthly_training.csv"), row.names = FALSE)
+   #write.csv(weather_monthly_testing_2024, here("data", "weather_monthly_testing_2024.csv"), row.names = FALSE)
   
-  #Merging corn_base_training data set with weather_monthly_training:
+  #Merging corn_base_testing_2024 data set with weather_monthly_testing_2024:
   
-  corn_training <- corn_base_training %>%
+  corn_testing_2024 <- corn_base_testing_2024 %>%
    select(-latitude,-longitude) %>%
-   left_join(weather_monthly_training, by = c("year", "site"))
+   left_join(weather_monthly_testing_2024, by = c("year", "site"))
   
- write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
-  
+  #write.csv(corn_testing_2024, here("data", "corn_testing_2024.csv"), row.names = FALSE)
 ```
 
 #6. Correcting the yield based on grain moisture.
@@ -506,7 +623,7 @@ corn_training_reduced <- corn_training %>%
 
 View(corn_training_reduced)
 
- write.csv(corn_training_reduced, here("data", "corn_training_reduced.csv"), row.names = FALSE)
+ #write.csv(corn_training_reduced, here("data", "corn_training_reduced.csv"), row.names = FALSE)
 
 
 ```
