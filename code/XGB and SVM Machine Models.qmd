@@ -11,7 +11,7 @@ editor: visual
 ```{r}
 #| message: false
 #| warning: false
-#install.packages("xgboost") #new pacakage
+
 library(tidymodels)   # Core framework for modeling (includes recipes, workflows, parsnip, etc.)
 library(finetune)     # Additional tuning strategies (e.g., racing, ANOVA-based tuning)
 library(vip)          # For plotting variable importance from fitted models
@@ -23,8 +23,6 @@ library(caret)        # Other great library for Machine Learning
 library(here)
 library(readr)
 library(dplyr)
-
-here::here()
 
 ```
 
@@ -84,9 +82,10 @@ ggsave(plot = density_plot_xgb,
 ```{r}
 # Create recipe for data preprocessing
 corn_recipe_xgb <- recipe(yield_mg_ha ~ ., data = corn_train_xgb) %>% 
-  step_impute_median(all_numeric_predictors()) %>%             #changing NAs values to median values
-  step_zv(all_predictors()) %>%   #removing zero variance
-  update_role(c(year, site), new_role = "ID")
+  step_impute_median(all_numeric_predictors()) %>%   #changing NAs values to median values
+  step_impute_mode(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_zv(all_predictors())
 
 corn_recipe_xgb
 ```
@@ -133,14 +132,6 @@ set.seed(34549) #34549
 resampling_foldcv_xgb <- vfold_cv(corn_train_xgb, # Create 5-fold cross-validation resampling object from training data
                               v = 10)
 
-#leave one year out (loyo = temporal predicton)
-resampling_fold_loyo_xgb <- group_vfold_cv(corn_train_xgb,
-                                       group = year)
-
-#leave one site out (loso = geographical prediction)
-resampling_fold_loso_xgb <- group_vfold_cv(corn_train_xgb,
-                                       group = site)
-
 ```
 
 ### c) Hyperparameter grid with Latin Hypercube Sampling
@@ -151,8 +142,7 @@ xgb_grid <- grid_latin_hypercube(
   min_n(),
   learn_rate(),
   trees(),
-  size = 100
-)
+  size = 50)
 
 xgb_grid
 ```
@@ -522,11 +512,11 @@ ggsave(plot = density_plot_svm,
 ```{r}
 
 # Create recipe for data preprocessing
-corn_recipe_svm <- recipe(yield_mg_ha ~ ., data = corn_train_svm) %>%
-  step_impute_median(all_numeric_predictors()) %>%         #changing NAs values to median values
-  step_normalize(all_numeric_predictors()) %>%             #We should normalize our variables for SVM
-  step_zv(all_predictors()) %>%                            #removing zero variance
-  update_role(c(year, site), new_role = "ID")                                   
+corn_recipe_svm <- recipe(yield_mg_ha ~ ., data = corn_train_svm) %>% 
+  step_impute_median(all_numeric_predictors()) %>%   #changing NAs values to median values
+  step_impute_mode(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_zv(all_predictors())
 
 corn_recipe_svm
 
@@ -570,14 +560,6 @@ set.seed(657)
 
 resampling_foldcv_svm <- vfold_cv(corn_train_svm, # Create 10-fold cross-validation resampling object from training data
                               v = 10)
-
-#leave one year out (loyo = temporal predicton)
-resampling_fold_loyo_svm <- group_vfold_cv(corn_train_svm,
-                                       group = year)
-
-#leave one site out (loso = geographical prediction)
-resampling_fold_loso_svm <- group_vfold_cv(corn_train_svm,
-                                       group = site)
 
 ```
 
