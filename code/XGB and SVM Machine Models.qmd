@@ -22,6 +22,10 @@ library(doParallel)   # For parallel computing (useful during resampling/tuning)
 library(caret)        # Other great library for Machine Learning 
 library(here)
 library(readr)
+library(dplyr)
+
+here::here()
+
 ```
 
 ## 1. Preprocessing
@@ -29,11 +33,11 @@ library(readr)
 ### a) Load Data and Data split
 
 ```{r}
-corn_training_reduced <- read.csv(here("data", "corn_training_reduced.csv"))
+corn_training <- read.csv(here("data", "corn_training.csv"))
 
 set.seed(9678965) # Setting seed to get reproducible results 
 
-corn_split_xgb <- initial_split(corn_training_reduced, 
+corn_split_xgb <- initial_split(corn_training, 
   prop = .7,
   strata = yield_mg_ha) # proportion of split same as previous codes
 
@@ -56,13 +60,22 @@ corn_test_xgb
 ### b) Distribution of target variable
 
 ```{r}
-ggplot() +
+ density_plot_xgb <- ggplot() +
   geom_density(data = corn_train_xgb, 
                aes(x = yield_mg_ha),
                color = "red") +
   geom_density(data = corn_test_xgb, 
                aes(x = yield_mg_ha),
                color = "blue") 
+
+cat(paste0("Saving...... density plot of train and test data"))
+
+ggsave(plot = density_plot_xgb,
+       path = here("output", "png"),
+       filename = "density_plot_test_train_xgb.png",
+       height = 6,
+       width = 9,
+       dpi = 600)
 
 ```
 
@@ -72,7 +85,8 @@ ggplot() +
 # Create recipe for data preprocessing
 corn_recipe_xgb <- recipe(yield_mg_ha ~ ., data = corn_train_xgb) %>% 
   step_impute_median(all_numeric_predictors()) %>%             #changing NAs values to median values
-  step_zv(all_predictors())                                    #removing zero variance
+  step_zv(all_predictors()) %>%   #removing zero variance
+  update_role(c(year, site), new_role = "ID")
 
 corn_recipe_xgb
 ```
@@ -114,13 +128,18 @@ xgb_spec
 ### b) Cross-validation setup
 
 ```{r}
-set.seed(657) #34549
+set.seed(34549) #34549
 
-resampling_foldcv <- vfold_cv(corn_train_xgb, # Create 5-fold cross-validation resampling object from training data
-                              v = 5)
+resampling_foldcv_xgb <- vfold_cv(corn_train_xgb, # Create 5-fold cross-validation resampling object from training data
+                              v = 10)
 
-resampling_foldcv
-resampling_foldcv$splits[[1]]
+#leave one year out (loyo = temporal predicton)
+resampling_fold_loyo_xgb <- group_vfold_cv(corn_train_xgb,
+                                       group = year)
+
+#leave one site out (loso = geographical prediction)
+resampling_fold_loso_xgb <- group_vfold_cv(corn_train_xgb,
+                                       group = site)
 
 ```
 
@@ -139,42 +158,124 @@ xgb_grid
 ```
 
 ```{r}
-ggplot(data = xgb_grid,
+ grid_plot_xgb <- ggplot(data = xgb_grid,
        aes(x = tree_depth, 
            y = min_n)) +
   geom_point(aes(color = factor(learn_rate),
                  size = trees),
              alpha = .5,
              show.legend = FALSE)
+
+cat(paste0("Saving...... grid plot from test data"))
+
+ggsave(plot = grid_plot_xgb,
+       path = here("output", "png"),
+       filename = "grid_plot_xgb.png",
+       height = 6,
+       width = 9,
+       dpi = 600)
+
 ```
 
 ## 3. Model Tuning
 
 ```{r}
-set.seed(6576)
-registerDoParallel(cores = parallel::detectCores() - 1)
+#Detecting cores in Sapelo:
 
-xgb_res <- tune_race_anova(object = xgb_spec,
-                      preprocessor = corn_recipe_xgb,
-                      resamples = resampling_foldcv,
-                      grid = xgb_grid,
-                      control = control_race(save_pred = TRUE))
+n_cores <- as.numeric(Sys.getenv("SLURM_CPUS_ON_MODE"))
 
-stopImplicitCluster()
+if (is.na(n_cores) || n_cores < 1) {
+  n_cores <- parallel::detectCores() -1
+  
+} 
 
-beepr::beep()
-xgb_res$.metrics[[1]]
+#Start the cluster
+cl <- makePSOCKcluster(n_cores)
+
+registerDoParallel(cl)
+
+cat(paste0("\nFound and registered", n_cores, "cores to work with\n"))
+
 ```
 
 ```{r}
-plot_race(xgb_res)
+set.seed(6576)
+
+# Creating the list of cross validation techniques so we can loop through them
+cv_list_xgb <- list(
+  vfold = resampling_foldcv_xgb,
+  year = resampling_fold_loyo_xgb,
+  location = resampling_fold_loso_xgb)
+
+#Create a empty list to store the results from the loop
+results_xgb <- list()
+
+#Create the loop
+for (i in seq_along(cv_list_xgb)) {
+  
+  name_xgb <- names(cv_list_xgb)[i]
+  
+  results_xgb[[name_xgb]] <- tune_race_anova(object = xgb_spec,
+                                     preprocessor = corn_recipe_xgb,
+                                     resamples = cv_list_xgb[[i]],
+                                     grid = xgb_grid,
+                                     control = control_race(save_pred = TRUE,
+                                                            parallel_over = "everything"))
+}
+
+stopCluster(cl)
+
+```
+
+```{r}
+
+#Create a data frame structure from the list obtained after running the loop
+
+results_df_xgb <- tibble(method = names(results_xgb),
+                         diff_cv = results_xgb) %>%
+
+#Collecting the metrices for each cross validation techniques using map function
+
+mutate(metrices = map2(diff_cv, method,
+                       ~.x %>%
+                         collect_metrics() %>%
+                         mutate(method = .y, .before = "trees")))
+
+results_df_xgb$metrices[[1]]
+
+results_df_xgb
+
+#Bind all the metrices together to select the best performing one
+
+all_metrices_xgb <- do.call(bind_rows,
+                            results_df_xgb$metrices)
+
+```
+
+```{r}
+
+#Automating to pull the best method out of 3 we ran
+
+best_method_xgb <- all_metrices_xgb %>%
+  filter(.metric =="rmse") %>%
+  slice_min(mean, n = 1) %>%
+  pull(method)
+
+#Getting the metrice (hyperparameter values of the best performing cross validation)
+
+best_cv_object_xgb <- results_df_xgb %>%
+  filter(method == best_method_xgb) %>%
+  pull(diff_cv) %>%
+  first()
+
+
 ```
 
 ## 4. Select Best Models
 
 ```{r}
 # Based on lowest RMSE
-best_rmse_xgb <- xgb_res %>% 
+best_rmse_xgb <- best_cv_object_xgb %>% 
   select_best(metric = "rmse")%>% 
   mutate(source = "best_rmse")
 
@@ -183,31 +284,8 @@ best_rmse_xgb
 ```
 
 ```{r}
-best_rmse_pct_loss_xgb <- xgb_res %>% 
-  select_by_pct_loss("min_n",
-                     metric = "rmse",
-                     limit = 1
-                     )%>% 
-  mutate(source = "best_rmse_pct_loss")
-
-best_rmse_pct_loss_xgb
-```
-
-```{r}
-# Based on lowest RMSE within 1 se
-best_rmse_one_std_err_xgb <- xgb_res %>% 
-  select_by_one_std_err(metric = "rmse",
-                        eval_time = 100,
-                        trees
-                        )%>% 
-  mutate(source = "best_rmse_one_std_err")
-
-best_rmse_one_std_err_xgb
-```
-
-```{r}
 # Based on greatest R2
-best_r2_xgb <- xgb_res %>% 
+best_r2_xgb <- best_cv_object_xgb %>% 
   select_best(metric = "rsq")%>% 
   mutate(source = "best_r2")
 
@@ -215,50 +293,25 @@ best_r2_xgb
 
 ```
 
-```{r}
-# Based on lowers R2 within 1% loss
-best_r2_pct_loss_xgb <- xgb_res %>% 
-  select_by_pct_loss("min_n",
-                     metric = "rsq",
-                     limit = 1
-                     ) %>% 
-  mutate(source = "best_r2_pct_loss")
-
-best_r2_pct_loss_xgb
-```
-
-```{r}
-# Based on lowest R2 within 1 se
-best_r2_one_std_error_xgb <- xgb_res %>% 
-  select_by_one_std_err(metric = "rsq",
-                        eval_time = 100,
-                        trees
-                        ) %>%
-  mutate(source = "best_r2_one_std_error")
-
-best_r2_one_std_error_xgb
-
-```
-
 ## 5. Compare and Finalize Model
 
 ```{r}
+
 best_rmse_xgb %>% 
-  bind_rows(best_rmse_pct_loss_xgb, 
-            best_rmse_one_std_err_xgb, 
-            best_r2_xgb, 
-            best_r2_pct_loss_xgb, 
-            best_r2_one_std_error_xgb)
+  bind_rows(best_rmse_xgb, 
+            best_r2_xgb) %>%
+  dplyr::select(source, everything())
+
 ```
 
 ## 6. Final Specification
 
 ```{r}
 final_spec_xgb <- boost_tree(
-  trees = best_r2_xgb$trees,           # Number of boosting rounds (trees)
-  tree_depth = best_r2_xgb$tree_depth, # Maximum depth of each tree
-  min_n = best_r2_xgb$min_n,           # Minimum number of samples to split a node
-  learn_rate = best_r2_xgb$learn_rate  # Learning rate (step size shrinkage)
+  trees = best_rmse_xgb$trees,           # Number of boosting rounds (trees)
+  tree_depth = best_rmse_xgb$tree_depth, # Maximum depth of each tree
+  min_n = best_rmse_xgb$min_n,           # Minimum number of samples to split a node
+  learn_rate = best_rmse_xgb$learn_rate  # Learning rate (step size shrinkage)
 ) %>%
   set_engine("xgboost") %>%
   set_mode("regression")
@@ -270,10 +323,14 @@ final_spec_xgb
 ## 7. Final Fit and Predictions
 
 ```{r}
+
+#Giving the specific to our Test data set:
+
 set.seed(877)
+
 final_fit_xgb <- last_fit(final_spec_xgb,
                 corn_recipe_xgb,
-                split = corn_split_xgb)
+                split = corn_split_xgb)    #The "split" will grab out test data set
 
 final_fit_xgb %>%
   collect_predictions()
@@ -283,13 +340,17 @@ final_fit_xgb %>%
 ## 8. Evaluate on Test Set
 
 ```{r}
-final_fit_xgb %>%
+test_met_xgb <- final_fit_xgb %>%
   collect_metrics()
+
+test_met_xgb
+
 ```
 
 ## 9. Evaluate on Training Set
 
 ```{r}
+
 final_spec_xgb %>%
   fit(yield_mg_ha ~ .,
       data = bake(corn_prep_xgb, 
@@ -308,29 +369,57 @@ final_spec_xgb %>%
   augment(new_data = bake(corn_prep_xgb, 
                           corn_train_xgb)) %>% 
   rsq(yield_mg_ha, .pred))
+
 ```
 
 ## 10. Predicted vs Observed Plot
 
 ```{r}
-final_fit_xgb %>%
+
+publication_ready_xgb <- final_fit_xgb %>%
   collect_predictions() %>%
-  ggplot(aes(x = yield_mg_ha, y = .pred)) +
-  geom_point(alpha = 0.5) +
-  geom_abline(slope = 1, intercept = 0, color = "red", linetype = 2) +
+  ggplot(aes(x = yield_mg_ha, 
+             y = .pred)) +
+  geom_point(aes(fill = yield_mg_ha),
+             alpha = 0.5,
+             shape = 25,
+             show.legend = F) +
+  scale_fill_viridis_c(option = "H") +
+  geom_abline(slope = 1, 
+              intercept = 0, 
+              color = "red", 
+              linetype = 2) +
   geom_smooth(method = "lm", se = FALSE) +
   labs(
     x = "Observed Yield (Mg/ha)",
     y = "Predicted Yield (Mg/ha)"
   ) +
-  theme_minimal()
+  annotate("label", 
+           x = Inf,
+           y = -Inf,
+           label = paste0("R-sq: ",
+                          round(test_met_xgb$.estimate[[2]], 2),
+                          "\nRMSE: ",
+                          round(test_met_xgb$.estimate[[1]], 2)),
+           hjust = 1, vjust = -0.5) +
+  theme(panel.background = element_rect(fill = "gray80"),
+        panel.grid = element_blank())
+
+cat(paste0("Saving...... publication ready plot for test dataset\n"))
+
+ggsave(plot = publication_ready_xgb,
+       path = here("output", "png"),
+       filename = "model_perf_test_data_xgb.png",
+       height = 6,
+       width = 9,
+       dpi = 600)
 
 ```
 
 ## 11. Variable Importance
 
 ```{r}
-final_spec_xgb %>%
+vip_xgb <- final_spec_xgb %>%
   fit(yield_mg_ha ~ .,
     data = bake(corn_prep_xgb, corn_train_xgb)) %>% #There little change in variable importance if you use full dataset
     vi() %>%
@@ -338,10 +427,21 @@ final_spec_xgb %>%
       Variable = fct_reorder(Variable, 
                            Importance)) %>%
   ggplot(aes(x = Importance, 
-             y = Variable)) +
+             y = Variable),
+         fill = Importance) +
   geom_col() +
   scale_x_continuous(expand = c(0, 0)) +
-  labs(y = NULL)
+  labs(y = NULL) +
+  theme_minimal()
+
+cat(paste0("Saving...... publication ready plot for variable importance\n"))
+
+ggsave(plot = vip_xgb,
+       path = here("output", "png"),
+       filename = "vip_test_data_xgb.png",
+       height = 6,
+       width = 9,
+       dpi = 600)
 
 ```
 
@@ -370,11 +470,10 @@ library(here)
 ### a) Load Data and Data split
 
 ```{r}
-corn_training_reduced <- read.csv(here("data", "corn_training_reduced.csv"))
 
 set.seed(9678965) # Setting seed to get reproducible results 
 
-corn_split_svm <- initial_split(corn_training_reduced,
+corn_split_svm <- initial_split(corn_training,
                             prop = .7,                 # proportion of split same as previous codes
                             strata = yield_mg_ha) 
   
@@ -399,13 +498,22 @@ corn_test_svm
 ```{r}
 
 
-ggplot() +
+ density_plot_svm <- ggplot() +
   geom_density(data = corn_train_svm, 
                aes(x = yield_mg_ha),
                color = "red") +
   geom_density(data = corn_test_svm, 
                aes(x = yield_mg_ha),
                color = "blue") 
+
+cat(paste0("Saving...... density plot of train and test data"))
+
+ggsave(plot = density_plot_svm,
+       path = here("output", "png"),
+       filename = "density_plot_test_train_svm.png",
+       height = 6,
+       width = 9,
+       dpi = 600)
 
 ```
 
@@ -415,9 +523,10 @@ ggplot() +
 
 # Create recipe for data preprocessing
 corn_recipe_svm <- recipe(yield_mg_ha ~ ., data = corn_train_svm) %>%
-  step_impute_median(all_numeric_predictors()) %>%             #changing NAs values to median values
-  step_normalize(all_numeric_predictors()) %>%                 #We should normalize our variables for SVM
-  step_zv(all_predictors())                                    #removing zero variance
+  step_impute_median(all_numeric_predictors()) %>%         #changing NAs values to median values
+  step_normalize(all_numeric_predictors()) %>%             #We should normalize our variables for SVM
+  step_zv(all_predictors()) %>%                            #removing zero variance
+  update_role(c(year, site), new_role = "ID")                                   
 
 corn_recipe_svm
 
@@ -430,6 +539,7 @@ corn_prep_svm <- corn_recipe_svm %>%
 
 # Examine preprocessing steps
 corn_prep_svm
+
 ```
 
 ## 2. Training
@@ -458,11 +568,16 @@ svm_spec
 
 set.seed(657) 
 
-resampling_foldcv <- vfold_cv(corn_train_svm, # Create 10-fold cross-validation resampling object from training data
-                              v = 5)
+resampling_foldcv_svm <- vfold_cv(corn_train_svm, # Create 10-fold cross-validation resampling object from training data
+                              v = 10)
 
-resampling_foldcv
-resampling_foldcv$splits[[1]]
+#leave one year out (loyo = temporal predicton)
+resampling_fold_loyo_svm <- group_vfold_cv(corn_train_svm,
+                                       group = year)
+
+#leave one site out (loso = geographical prediction)
+resampling_fold_loso_svm <- group_vfold_cv(corn_train_svm,
+                                       group = site)
 
 ```
 
@@ -470,49 +585,101 @@ resampling_foldcv$splits[[1]]
 
 ```{r}
 
-svm_grid <- grid_latin_hypercube(
-  cost(),
-  rbf_sigma(),
-  size = 100
+svm_grid <- grid_space_filling(
+  cost(range = c(-2, 4)),
+  rbf_sigma(range = c(-6, 1)),
+  size = 50
 )
 
-svm_grid
-
 ```
-
-```{r}
-
-ggplot(data = svm_grid,
-       aes(x = cost, 
-           y = rbf_sigma)) +
-  geom_point(alpha = .5)
-
-```
-
 ## 3. Model Tuning
 
 ```{r}
+#Detecting cores in Sapelo:
 
-set.seed(6576)
-registerDoParallel(cores = parallel::detectCores() - 1)
+n_cores <- as.numeric(Sys.getenv("SLURM_CPUS_ON_MODE"))
 
-svm_res <- tune_race_anova(
-  object = svm_spec,
-  preprocessor = corn_recipe_svm,
-  resamples = resampling_foldcv,
-  grid = svm_grid,
-  control = control_race(save_pred = TRUE)
-)
+if (is.na(n_cores)) n_cores <- parallel::detectCores() -1
 
-stopImplicitCluster()
+#Start the cluster
+cl <- makePSOCKcluster(n_cores)
 
-beepr::beep()
-svm_res$.metrics[[1]]
+registerDoParallel(cl)
+
+cat(paste0("\nFound and registered", n_cores, "cores to work with\n"))
 
 ```
 
 ```{r}
-plot_race(svm_res)
+set.seed(6576)
+
+# Creating the list of cross validation techniques so we can loop through them
+cv_list_svm <- list(
+  vfold = resampling_foldcv_svm,
+  year = resampling_fold_loyo_svm,
+  location = resampling_fold_loso_svm)
+
+#Create a empty list to store the results from the loop
+results_svm <- list()
+
+#Create the loop
+for (i in seq_along(cv_list_svm)) {
+  
+  name_svm <- names(cv_list_svm)[i]
+  
+  results_svm[[name_svm]] <- tune_race_anova(object = svm_spec,
+                                     preprocessor = corn_recipe_svm,
+                                     resamples = cv_list_svm[[i]],
+                                     grid = svm_grid,
+                                     control = control_race(save_pred = TRUE,
+                                                            parallel_over = "everything"))
+}
+
+stopCluster(cl)
+
+```
+
+```{r}
+
+#Create a data frame structure from the list obtained after running the loop
+
+results_df_svm <- tibble(method = names(results_svm),
+                         diff_cv = results_svm) %>%
+
+#Collecting the metrices for each cross validation techniques using map function
+
+mutate(metrices = map2(diff_cv, method,
+                       ~.x %>%
+                         collect_metrics() %>%
+                         mutate(method = .y, .before = "cost")))
+
+results_df_svm$metrices[[1]]
+
+results_df_svm
+
+#Bind all the metrices together to select the best performing one
+
+all_metrices_svm <- do.call(bind_rows,
+                            results_df_svm$metrices)
+
+```
+```{r}
+
+#Automating to pull the best method out of 3 we ran
+
+best_method_svm <- all_metrices_svm %>%
+  filter(.metric =="rmse") %>%
+  slice_min(mean, n = 1) %>%
+  pull(method)
+
+#Getting the metrice (hyperparameter values of the best performing cross validation)
+
+best_cv_object_svm <- results_df_svm %>%
+  filter(method == best_method_svm) %>%
+  pull(diff_cv) %>%
+  first()
+
+
 ```
 
 ## 4. Select Best Models
@@ -520,7 +687,7 @@ plot_race(svm_res)
 ```{r}
 
 # Based on lowest RMSE
-best_rmse_svm <- svm_res %>% 
+best_rmse_svm <- best_cv_object_svm %>% 
   select_best(metric = "rmse") %>% 
   mutate(source = "best_rmse")
 
@@ -530,69 +697,12 @@ best_rmse_svm
 
 ```{r}
 
-best_rmse_pct_loss_svm <- svm_res %>% 
-  select_by_pct_loss(
-    cost,
-    metric = "rmse",
-    limit = 1
-  ) %>% 
-  mutate(source = "best_rmse_pct_loss")
-
-best_rmse_pct_loss_svm
-
-```
-
-```{r}
-
-# Based on lowest RMSE within 1 se
-best_rmse_one_std_err_svm <- svm_res %>% 
-  select_by_one_std_err(
-    metric = "rmse",
-    cost
-  ) %>% 
-  mutate(source = "best_rmse_one_std_err")
-
-best_rmse_one_std_err_svm
-
-```
-
-```{r}
-
 # Based on greatest R2
-best_r2_svm <- svm_res %>% 
+best_r2_svm <- best_cv_object_svm %>% 
   select_best(metric = "rsq") %>% 
   mutate(source = "best_r2")
 
 best_r2_svm
-
-```
-
-```{r}
-
-# Based on greatest R2 within 1% loss
-best_r2_pct_loss_svm <- svm_res %>% 
-  select_by_pct_loss(
-    cost,
-    metric = "rsq",
-    limit = 1
-  ) %>% 
-  mutate(source = "best_r2_pct_loss")
-
-best_r2_pct_loss_svm
-
-```
-
-```{r}
-
-# Based on lowest R2 within 1 se
-best_r2_one_std_error_svm <- svm_res %>% 
-  select_by_one_std_err(
-    metric = "rsq",
-    cost
-  ) %>%
-  mutate(source = "best_r2_one_std_error")
-
-best_r2_one_std_error_svm
 
 ```
 
@@ -601,13 +711,9 @@ best_r2_one_std_error_svm
 ```{r}
 
 best_rmse_svm %>% 
-  bind_rows(
-    best_rmse_pct_loss_svm, 
-    best_rmse_one_std_err_svm, 
-    best_r2_svm, 
-    best_r2_pct_loss_svm, 
-    best_r2_one_std_error_svm
-  )
+  bind_rows(best_rmse_svm, 
+            best_r2_svm) %>%
+  dplyr::select(source, everything())
 
 ```
 
@@ -630,11 +736,13 @@ final_spec_svm
 
 ```{r}
 
+#Giving the specific to our Test data set:
+
 set.seed(877)
 
   final_fit_svm <- last_fit(final_spec_svm,
                             corn_recipe_svm,
-                            split = corn_split_svm)
+                            split = corn_split_svm)     #The "split" will grab out test data set
 
 final_fit_svm %>%
   collect_predictions()
@@ -645,9 +753,10 @@ final_fit_svm %>%
 
 ```{r}
 
-   final_fit_svm %>%
+   test_met_svm <- final_fit_svm %>%
      collect_metrics()
 
+ test_met_svm
 ```
 
 ## 9. Evaluate on Training Set
@@ -678,18 +787,43 @@ final_spec_svm %>%
 
 ```{r}
 
-collect_predictions(final_fit_svm) %>%
-  ggplot(aes(x = yield_mg_ha, y = .pred)) +
-  geom_point(alpha = 0.5) +
-  geom_abline(slope = 1, intercept = 0, color = "red", linetype = 2) +
-  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+publication_ready_svm <- final_fit_svm %>%
+  collect_predictions() %>%
+  ggplot(aes(x = yield_mg_ha, 
+             y = .pred)) +
+  geom_point(aes(fill = yield_mg_ha),
+             alpha = 0.5,
+             shape = 25,
+             show.legend = F) +
+  scale_fill_viridis_c(option = "H") +
+  geom_abline(slope = 1, 
+              intercept = 0, 
+              color = "red", 
+              linetype = 2) +
+  geom_smooth(method = "lm", se = FALSE) +
   labs(
-    x = "Observed Yield",
-    y = "Predicted Yield",
-    title = "Observed vs Predicted Yield - SVM"
+    x = "Observed Yield (Mg/ha)",
+    y = "Predicted Yield (Mg/ha)"
   ) +
-  theme_minimal()
+  annotate("label", 
+           x = Inf,
+           y = -Inf,
+           label = paste0("R-sq: ",
+                          round(test_met_svm$.estimate[[2]], 2),
+                          "\nRMSE: ",
+                          round(test_met_svm$.estimate[[1]], 2)),
+           hjust = 1, vjust = -0.5) +
+  theme(panel.background = element_rect(fill = "gray80"),
+        panel.grid = element_blank())
 
+cat(paste0("Saving...... publication ready plot for test dataset\n"))
+
+ggsave(plot = publication_ready_svm,
+       path = here("output", "png"),
+       filename = "model_perf_test_data_svm.png",
+       height = 6,
+       width = 9,
+       dpi = 600)
 ```
 
 ## 11. Variable Importance
@@ -706,7 +840,7 @@ train_baked_svm <- bake(corn_prep_svm, corn_train_svm)
 
 vip::vi_permute(
   object = svm_fit,
-  train = train_baked,
+  train = train_baked_svm,
   target = "yield_mg_ha",
   metric = "rmse",
   pred_wrapper = function(object, newdata) {
@@ -716,12 +850,73 @@ vip::vi_permute(
 
 ```
 
-## 12. Transforming files to run in Sapelo (supercomputer)
+# Fit final models using the full training dataset.
+
+
+```{r}
+
+final_wf_xgb <- workflow() %>%
+  add_recipe(corn_recipe_xgb) %>%
+  add_model(final_spec_xgb)
+
+final_wf_svm <- workflow() %>%
+  add_recipe(corn_recipe_svm) %>%
+  add_model(final_spec_svm)
+
+```
+
+```{r}
+
+#Training the final model on all available training data, not only the 70% split
+
+final_model_xgb <- final_wf_xgb %>%
+  fit(data = corn_training)
+
+final_model_svm <- final_wf_svm %>%
+  fit(data = corn_training)
+
+```
+
+```{r}
+#Loading new Test dataset:
+
+ corn_test_2024 <- read.csv(here("data", "corn_test_2024.csv"))
+
+
+```
+
+```{r}
+#Predicting with XGBoost:
+
+pred_xgb <- predict(final_model_xgb, corn_test_2024) %>%
+  rename(pred_xgb = .pred)
+
+#Predicting with SVM:
+
+pred_svm <- predict(final_model_svm, corn_test_2024) %>%
+  rename(pred_svm = .pred)
+
+#Combining predictions with the original data
+
+new_data_predictions <- corn_test_2024 %>%
+  bind_cols(pred_xgb, pred_svm)
+
+new_data_predictions
+
+write.csv(new_data_predictions,here("output", "new_data_predictions_xgb_svm.csv"),row.names = FALSE)
+
+```
+
+# Transforming files to run in Sapelo (supercomputer)
 
 ```{r}
 
 #From ".qmd" to ".R":
 
-knitr::purl("XGB and SVM Machine Models.qmd", output = "XGB_SVM_Sapelo_script.R", documentation = 0)
+#knitr::purl(here("code", "XGB and SVM Machine Models.qmd"), output = here("code", "XGB_SVM_Sapelo_script.R"), documentation = 0)
+
 
 ```
+
+
+

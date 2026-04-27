@@ -622,7 +622,12 @@ corn_training_reduced <- corn_training %>%
 
 View(corn_training_reduced)
 
- #write.csv(corn_training_reduced, here("data", "corn_training_reduced.csv"), row.names = FALSE)
+ corn_training <- read.csv(here("data", "corn_training.csv")) %>%
+   select(-c(3:5)) %>%
+   mutate(across(where(is.numeric), ~ round(.x, 2)))
+
+
+ #write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
 
 
 ```
