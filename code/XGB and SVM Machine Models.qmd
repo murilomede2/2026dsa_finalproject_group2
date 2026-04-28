@@ -172,7 +172,7 @@ ggsave(plot = grid_plot_xgb,
 ```{r}
 #Detecting cores in Sapelo:
 
-n_cores <- as.numeric(Sys.getenv("SLURM_CPUS_ON_MODE"))
+n_cores <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK"))
 
 if (is.na(n_cores) || n_cores < 1) {
   n_cores <- parallel::detectCores() -1
@@ -192,10 +192,7 @@ cat(paste0("\nFound and registered", n_cores, "cores to work with\n"))
 set.seed(6576)
 
 # Creating the list of cross validation techniques so we can loop through them
-cv_list_xgb <- list(
-  vfold = resampling_foldcv_xgb,
-  year = resampling_fold_loyo_xgb,
-  location = resampling_fold_loso_xgb)
+cv_list_xgb <- list(vfold = resampling_foldcv_xgb)
 
 #Create a empty list to store the results from the loop
 results_xgb <- list()
@@ -516,7 +513,8 @@ corn_recipe_svm <- recipe(yield_mg_ha ~ ., data = corn_train_svm) %>%
   step_impute_median(all_numeric_predictors()) %>%   #changing NAs values to median values
   step_impute_mode(all_nominal_predictors()) %>%
   step_dummy(all_nominal_predictors()) %>%
-  step_zv(all_predictors())
+  step_zv(all_predictors()) %>%
+  step_normalize(all_numeric_predictors())
 
 corn_recipe_svm
 
@@ -559,7 +557,7 @@ svm_spec
 set.seed(657) 
 
 resampling_foldcv_svm <- vfold_cv(corn_train_svm, # Create 10-fold cross-validation resampling object from training data
-                              v = 10)
+                              v = 5)
 
 ```
 
@@ -570,7 +568,7 @@ resampling_foldcv_svm <- vfold_cv(corn_train_svm, # Create 10-fold cross-validat
 svm_grid <- grid_space_filling(
   cost(),
   rbf_sigma(),
-  size = 50
+  size = 30
 )
 
 ```
@@ -579,7 +577,7 @@ svm_grid <- grid_space_filling(
 ```{r}
 #Detecting cores in Sapelo:
 
-n_cores <- as.numeric(Sys.getenv("SLURM_CPUS_ON_MODE"))
+n_cores <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK"))
 
 if (is.na(n_cores)) n_cores <- parallel::detectCores() -1
 
@@ -893,7 +891,7 @@ write.csv(new_data_predictions,here("output", "new_data_predictions_xgb_svm.csv"
 
 #From ".qmd" to ".R":
 
-#knitr::purl(here("code", "XGB and SVM Machine Models.qmd"), output = here("code", "XGB_SVM_Sapelo_script.R"), documentation = 0)
+ #knitr::purl(here("code", "XGB and SVM Machine Models.qmd"), output = here("code", "XGB_SVM_Sapelo_script.R"), documentation = 0)
 
 
 ```

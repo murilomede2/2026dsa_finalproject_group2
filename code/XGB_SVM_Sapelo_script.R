@@ -1,4 +1,3 @@
-#install.packages("xgboost") #new pacakage
 library(tidymodels)   # Core framework for modeling (includes recipes, workflows, parsnip, etc.)
 library(finetune)     # Additional tuning strategies (e.g., racing, ANOVA-based tuning)
 library(vip)          # For plotting variable importance from fitted models
@@ -10,8 +9,6 @@ library(caret)        # Other great library for Machine Learning
 library(here)
 library(readr)
 library(dplyr)
-
-here::here()
 
 
 corn_training <- read.csv(here("data", "corn_training.csv"))
@@ -53,9 +50,10 @@ ggsave(plot = density_plot_xgb,
 
 # Create recipe for data preprocessing
 corn_recipe_xgb <- recipe(yield_mg_ha ~ ., data = corn_train_xgb) %>% 
-  step_impute_median(all_numeric_predictors()) %>%             #changing NAs values to median values
-  step_zv(all_predictors()) %>%   #removing zero variance
-  update_role(c(year, site), new_role = "ID")
+  step_impute_median(all_numeric_predictors()) %>%   #changing NAs values to median values
+  step_impute_mode(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_zv(all_predictors())
 
 corn_recipe_xgb
 
@@ -90,22 +88,13 @@ set.seed(34549) #34549
 resampling_foldcv_xgb <- vfold_cv(corn_train_xgb, # Create 5-fold cross-validation resampling object from training data
                               v = 10)
 
-#leave one year out (loyo = temporal predicton)
-resampling_fold_loyo_xgb <- group_vfold_cv(corn_train_xgb,
-                                       group = year)
-
-#leave one site out (loso = geographical prediction)
-resampling_fold_loso_xgb <- group_vfold_cv(corn_train_xgb,
-                                       group = site)
-
 
 xgb_grid <- grid_latin_hypercube(
   tree_depth(),
   min_n(),
   learn_rate(),
   trees(),
-  size = 100
-)
+  size = 50)
 
 xgb_grid
 
@@ -129,7 +118,7 @@ ggsave(plot = grid_plot_xgb,
 
 #Detecting cores in Sapelo:
 
-n_cores <- as.numeric(Sys.getenv("SLURM_CPUS_ON_MODE"))
+n_cores <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK"))
 
 if (is.na(n_cores) || n_cores < 1) {
   n_cores <- parallel::detectCores() -1
@@ -147,10 +136,7 @@ cat(paste0("\nFound and registered", n_cores, "cores to work with\n"))
 set.seed(6576)
 
 # Creating the list of cross validation techniques so we can loop through them
-cv_list_xgb <- list(
-  vfold = resampling_foldcv_xgb,
-  year = resampling_fold_loyo_xgb,
-  location = resampling_fold_loso_xgb)
+cv_list_xgb <- list(vfold = resampling_foldcv_xgb)
 
 #Create a empty list to store the results from the loop
 results_xgb <- list()
@@ -402,11 +388,12 @@ ggsave(plot = density_plot_svm,
 
 
 # Create recipe for data preprocessing
-corn_recipe_svm <- recipe(yield_mg_ha ~ ., data = corn_train_svm) %>%
-  step_impute_median(all_numeric_predictors()) %>%         #changing NAs values to median values
-  step_normalize(all_numeric_predictors()) %>%             #We should normalize our variables for SVM
-  step_zv(all_predictors()) %>%                            #removing zero variance
-  update_role(c(year, site), new_role = "ID")                                   
+corn_recipe_svm <- recipe(yield_mg_ha ~ ., data = corn_train_svm) %>% 
+  step_impute_median(all_numeric_predictors()) %>%   #changing NAs values to median values
+  step_impute_mode(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_zv(all_predictors()) %>%
+  step_normalize(all_numeric_predictors())
 
 corn_recipe_svm
 
@@ -437,28 +424,20 @@ svm_spec
 set.seed(657) 
 
 resampling_foldcv_svm <- vfold_cv(corn_train_svm, # Create 10-fold cross-validation resampling object from training data
-                              v = 10)
-
-#leave one year out (loyo = temporal predicton)
-resampling_fold_loyo_svm <- group_vfold_cv(corn_train_svm,
-                                       group = year)
-
-#leave one site out (loso = geographical prediction)
-resampling_fold_loso_svm <- group_vfold_cv(corn_train_svm,
-                                       group = site)
+                              v = 5)
 
 
 
 svm_grid <- grid_space_filling(
-  cost(range = c(-2, 4)),
-  rbf_sigma(range = c(-6, 1)),
-  size = 50
+  cost(),
+  rbf_sigma(),
+  size = 30
 )
 
 
 #Detecting cores in Sapelo:
 
-n_cores <- as.numeric(Sys.getenv("SLURM_CPUS_ON_MODE"))
+n_cores <- as.numeric(Sys.getenv("SLURM_CPUS_PER_TASK"))
 
 if (is.na(n_cores)) n_cores <- parallel::detectCores() -1
 
@@ -474,9 +453,7 @@ set.seed(6576)
 
 # Creating the list of cross validation techniques so we can loop through them
 cv_list_svm <- list(
-  vfold = resampling_foldcv_svm,
-  year = resampling_fold_loyo_svm,
-  location = resampling_fold_loso_svm)
+  vfold = resampling_foldcv_svm)
 
 #Create a empty list to store the results from the loop
 results_svm <- list()
@@ -719,5 +696,6 @@ write.csv(new_data_predictions,here("output", "new_data_predictions_xgb_svm.csv"
 
 #From ".qmd" to ".R":
 
-knitr::purl("XGB and SVM Machine Models.qmd", output = here("data", "XGB_SVM_Sapelo_script.R"), documentation = 0)
+#knitr::purl(here("code", "XGB and SVM Machine Models.qmd"), output = here("code", "XGB_SVM_Sapelo_script.R"), documentation = 0)
+
 
