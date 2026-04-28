@@ -20,7 +20,9 @@ library(readr)
 library(dplyr)
 
 
+
 corn_training <- read.csv(here("data", "corn_training.csv"))
+
 
 set.seed(9678965) # Setting seed to get reproducible results 
 
@@ -46,10 +48,8 @@ corn_test_xgb
   geom_density(data = corn_test_xgb, 
                aes(x = yield_mg_ha),
                color = "blue") 
-
-cat(paste0("Saving...... density plot of train and test data"))
-
-ggsave(plot = density_plot_xgb,
+ 
+gsave(plot = density_plot_xgb,
        path = here("output", "png"),
        filename = "density_plot_test_train_xgb.png",
        height = 6,
@@ -95,15 +95,16 @@ xgb_spec
 set.seed(34549) #34549
 
 resampling_foldcv_xgb <- vfold_cv(corn_train_xgb, # Create 5-fold cross-validation resampling object from training data
-                              v = 10)
+                              v = 5)
 
+resampling_foldcv_xgb
 
-xgb_grid <- grid_latin_hypercube(
+xgb_grid <- grid_space_filling(
   tree_depth(),
   min_n(),
   learn_rate(),
   trees(),
-  size = 50)
+  size = 5)
 
 xgb_grid
 
@@ -115,9 +116,8 @@ xgb_grid
              alpha = .5,
              show.legend = FALSE)
 
-cat(paste0("Saving...... grid plot from test data"))
 
-ggsave(plot = grid_plot_xgb,
+gsave(plot = grid_plot_xgb,
        path = here("output", "png"),
        filename = "grid_plot_xgb.png",
        height = 6,
@@ -143,7 +143,7 @@ registerDoParallel(cl)
 set.seed(6576)
 
 xgb_res <- tune_race_anova(object = xgb_spec,
-                      preprocessor = weather_recipe,
+                      preprocessor =corn_recipe_xgb,
                       resamples = resampling_foldcv_xgb,
                       grid = xgb_grid,
                       control = control_race(save_pred = TRUE))
@@ -156,7 +156,9 @@ xgb_res
 
 plot_race_xgb <- plot_race(xgb_res)
 
-ggsave(
+plot_race_xgb
+
+gsave(
   plot = plot_race_xgb,
   path = here("output", "png"),
   filename = "race_plot_xgb.png",
@@ -182,7 +184,7 @@ best_r2_xgb
 
 
 
-  best_rmse %>% 
+  best_rmse_xgb %>% 
   bind_rows(best_r2_xgb)
 
 
@@ -274,9 +276,7 @@ publication_ready_xgb <- final_fit_xgb %>%
   theme(panel.background = element_rect(fill = "gray80"),
         panel.grid = element_blank())
 
-cat(paste0("Saving...... publication ready plot for test dataset\n"))
-
-ggsave(plot = publication_ready_xgb,
+gsave(plot = publication_ready_xgb,
        path = here("output", "png"),
        filename = "model_perf_test_data_xgb.png",
        height = 6,
@@ -301,9 +301,7 @@ vip_xgb <- final_spec_xgb %>%
        title = "Variable Importance in Yield Prediction") +
   theme_minimal()
 
-cat(paste0("Saving...... publication ready plot for variable importance\n"))
-
-ggsave(plot = vip_xgb,
+gsave(plot = vip_xgb,
        path = here("output", "png"),
        filename = "vip_test_data_xgb.png",
        height = 6,
@@ -342,9 +340,8 @@ corn_test_svm
                aes(x = yield_mg_ha),
                color = "blue") 
 
-cat(paste0("Saving...... density plot of train and test data"))
 
-ggsave(plot = density_plot_svm,
+gsave(plot = density_plot_svm,
        path = here("output", "png"),
        filename = "density_plot_test_train_svm.png",
        height = 6,
@@ -391,14 +388,16 @@ set.seed(657)
 
 resampling_foldcv_svm <- vfold_cv(corn_train_svm, # Create 10-fold cross-validation resampling object from training data
                               v = 5)
+resampling_foldcv_svm
 
 
 
 svm_grid <- grid_space_filling(
   cost(),
   rbf_sigma(),
-  size = 30
-)
+  size = 20)
+
+svm_grid
 
 
 #Detecting cores in Sapelo:
@@ -441,7 +440,7 @@ ggsave(
 
 
 # Based on lowest RMSE
-best_rmse_svm <- best_cv_object_svm %>% 
+best_rmse_svm <- svm_res %>% 
   select_best(metric = "rmse") %>% 
   mutate(source = "best_rmse")
 
@@ -450,7 +449,7 @@ best_rmse_svm
 
 
 # Based on greatest R2
-best_r2_svm <- best_cv_object_svm %>% 
+best_r2_svm <- svm_res %>% 
   select_best(metric = "rsq") %>% 
   mutate(source = "best_r2")
 
@@ -524,7 +523,7 @@ publication_ready_svm <- final_fit_svm %>%
              y = .pred)) +
   geom_point(aes(fill = yield_mg_ha),
              alpha = 0.7,
-             shape = 25,
+             shape = 21,
              show.legend = F) +
   scale_fill_viridis_c(option = "H") +
   geom_abline(color = "red", 
@@ -545,7 +544,7 @@ publication_ready_svm <- final_fit_svm %>%
   theme(panel.background = element_rect(fill = "gray80"),
         panel.grid = element_blank())
 
-ggsave(plot = publication_ready_svm,
+ ggsave(plot = publication_ready_svm,
        path = here("output", "png"),
        filename = "model_perf_test_data_svm.png",
        height = 6,
@@ -560,15 +559,20 @@ svm_fit <- final_spec_svm %>%
     yield_mg_ha ~ .,
     data = train_baked_svm)
 
+set.seed(657)
+
+train_baked_svm_small <- train_baked_svm %>%
+  slice_sample(n = 50000)
+
 vi_svm <- vip::vi_permute(
   object = svm_fit,
-  train = train_baked_svm,
+  train = train_baked_svm_small,
   target = "yield_mg_ha",
   metric = "rmse",
   pred_wrapper = function(object, newdata) {
     predict(object, newdata)$.pred
   },
-  nsim = 5)
+  nsim = 3)
 
 vip_svm_plot <- vip::vip(vi_svm, num_features = 15) +
   labs(
@@ -637,6 +641,6 @@ write.csv(new_data_predictions,here("output", "new_data_predictions_xgb_svm.csv"
 
 #From ".qmd" to ".R":
 
- #knitr::purl(here("code", "XGB and SVM Machine Models.qmd"), output = here("code", "XGB_SVM_Sapelo_script.R"), documentation = 0)
+ knitr::purl(here("code", "XGB and SVM Machine Models.qmd"), output = here("code", "XGB_SVM_Sapelo_script.R"), documentation = 0)
 
 
