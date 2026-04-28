@@ -568,8 +568,8 @@ resampling_foldcv_svm <- vfold_cv(corn_train_svm, # Create 10-fold cross-validat
 ```{r}
 
 svm_grid <- grid_space_filling(
-  cost(range = c(-2, 4)),
-  rbf_sigma(range = c(-6, 1)),
+  cost(),
+  rbf_sigma(),
   size = 50
 )
 
@@ -597,9 +597,7 @@ set.seed(6576)
 
 # Creating the list of cross validation techniques so we can loop through them
 cv_list_svm <- list(
-  vfold = resampling_foldcv_svm,
-  year = resampling_fold_loyo_svm,
-  location = resampling_fold_loso_svm)
+  vfold = resampling_foldcv_svm)
 
 #Create a empty list to store the results from the loop
 results_svm <- list()
