@@ -9,7 +9,7 @@ editor: visual
 ```{r}
 # shared_lib_path <- "/home/mm60458/instructor_data/shared_R_libs"
                       
-#class_packages <- c("tidymodels", "finetune", "vip", "xgboost", "ranger", "tidyverse", "doParallel", "caret", "here", "readr", "dplyr", "kernlab")
+#class_packages <- c("tidymodels", "finetune", "vip", "xgboost", "ranger", "tidyverse", "doParallel", "caret", "here", "readr", "dplyr", "kernlab", "lme4")
 
 #install.packages(class_packages, lib = shared_lib_path)
 
@@ -37,6 +37,7 @@ library(caret)        # Other great library for Machine Learning
 library(here)
 library(readr)
 library(dplyr)
+library(lme4)
 
 ```
 
