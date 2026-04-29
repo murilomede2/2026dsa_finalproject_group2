@@ -49,8 +49,8 @@ corn_test_xgb
                aes(x = yield_mg_ha),
                color = "blue") 
  
-gsave(plot = density_plot_xgb,
-       path = here("output", "png"),
+ggsave(plot = density_plot_xgb,
+       path = here("output", "Models_png"),
        filename = "density_plot_test_train_xgb.png",
        height = 6,
        width = 9,
@@ -104,7 +104,7 @@ xgb_grid <- grid_space_filling(
   min_n(),
   learn_rate(),
   trees(),
-  size = 5)
+  size = 100)
 
 xgb_grid
 
@@ -117,8 +117,8 @@ xgb_grid
              show.legend = FALSE)
 
 
-gsave(plot = grid_plot_xgb,
-       path = here("output", "png"),
+ggsave(plot = grid_plot_xgb,
+       path = here("output", "Models_png"),
        filename = "grid_plot_xgb.png",
        height = 6,
        width = 9,
@@ -158,9 +158,9 @@ plot_race_xgb <- plot_race(xgb_res)
 
 plot_race_xgb
 
-gsave(
+ggsave(
   plot = plot_race_xgb,
-  path = here("output", "png"),
+  path = here("output", "Models_png"),
   filename = "race_plot_xgb.png",
   height = 6,
   width = 9,
@@ -276,8 +276,8 @@ publication_ready_xgb <- final_fit_xgb %>%
   theme(panel.background = element_rect(fill = "gray80"),
         panel.grid = element_blank())
 
-gsave(plot = publication_ready_xgb,
-       path = here("output", "png"),
+ggsave(plot = publication_ready_xgb,
+       path = here("output", "Models_png"),
        filename = "model_perf_test_data_xgb.png",
        height = 6,
        width = 9,
@@ -301,8 +301,8 @@ vip_xgb <- final_spec_xgb %>%
        title = "Variable Importance in Yield Prediction") +
   theme_minimal()
 
-gsave(plot = vip_xgb,
-       path = here("output", "png"),
+ggsave(plot = vip_xgb,
+       path = here("output", "Models_png"),
        filename = "vip_test_data_xgb.png",
        height = 6,
        width = 9,
@@ -341,8 +341,8 @@ corn_test_svm
                color = "blue") 
 
 
-gsave(plot = density_plot_svm,
-       path = here("output", "png"),
+ggsave(plot = density_plot_svm,
+       path = here("output", "Models_png"),
        filename = "density_plot_test_train_svm.png",
        height = 6,
        width = 9,
@@ -545,7 +545,7 @@ publication_ready_svm <- final_fit_svm %>%
         panel.grid = element_blank())
 
  ggsave(plot = publication_ready_svm,
-       path = here("output", "png"),
+       path = here("output", "Models_png"),
        filename = "model_perf_test_data_svm.png",
        height = 6,
        width = 9,
@@ -585,7 +585,7 @@ vip_svm_plot <- vip::vip(vi_svm, num_features = 15) +
 
 ggsave(
   plot = vip_svm_plot,
-  path = here("output", "png"),
+  path = here("output", "Models_png"),
   filename = "variable_importance_svm.png",
   height = 6,
   width = 9,
@@ -593,39 +593,54 @@ ggsave(
 
 
 
+##XGBOOST:
+
 final_wf_xgb <- workflow() %>%
   add_recipe(corn_recipe_xgb) %>%
   add_model(final_spec_xgb)
+
+final_wf_xgb
+
+##SVM:
 
 final_wf_svm <- workflow() %>%
   add_recipe(corn_recipe_svm) %>%
   add_model(final_spec_svm)
 
+final_wf_svm
+
 
 
 #Training the final model on all available training data, not only the 70% split
 
+##XGBOOST:
+
 final_model_xgb <- final_wf_xgb %>%
   fit(data = corn_training)
+
+final_model_xgb
+
+##SVM:
 
 final_model_svm <- final_wf_svm %>%
   fit(data = corn_training)
 
+final_model_svm
+
 
 #Loading new Test dataset:
 
- corn_test_2024 <- read.csv(here("data", "corn_test_2024.csv"))
-
+ corn_testing_2024 <- read.csv(here("data", "corn_testing_2024.csv"))
 
 
 #Predicting with XGBoost:
 
-pred_xgb <- predict(final_model_xgb, corn_test_2024) %>%
+pred_xgb <- predict(final_model_xgb, corn_testing_2024) %>%
   rename(pred_xgb = .pred)
 
 #Predicting with SVM:
 
-pred_svm <- predict(final_model_svm, corn_test_2024) %>%
+pred_svm <- predict(final_model_svm, corn_testing_2024) %>%
   rename(pred_svm = .pred)
 
 #Combining predictions with the original data

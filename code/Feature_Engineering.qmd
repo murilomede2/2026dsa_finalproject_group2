@@ -387,6 +387,8 @@ weather_monthly_testing <- corn_base_testing_2024 %>%
 
 #For testing data:
 
+  corn_base_testing_2024 <- read.csv(here("data", "corn_base_testing_2024.csv"))
+  
   daymet <- function(site, lat, lon, year) {
   
   weather <- download_daymet(
@@ -412,7 +414,7 @@ weather_monthly_testing <- corn_base_testing_2024 %>%
       tmin_adj = pmax(tmin_deg_c, 10),
       tavg_adj = (tmax_adj + tmin_adj) / 2,
       gdd = pmax(tavg_adj - 10, 0)) %>%
-    filter(month_num >= 4, month_num <= 12) %>%     #filtering the data based on growing season (April to December)
+    filter(month_num >= 3, month_num <= 12) %>%     #filtering the data based on growing season (April to December)
     group_by(site, year, month) %>%
     summarise(
       prcp_mm = sum(prcp_mm_day, na.rm = TRUE),
@@ -628,6 +630,23 @@ View(corn_training_reduced)
 
 
  #write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
+
+
+```
+
+```{r}
+#| message: false
+#| warning: false
+
+#Removing "grain_moisture" and adding March weather data to 2024 test data set. 
+
+
+corn_training <- read.csv(here("data", "corn_training.csv")) %>%
+  select(-grain_moisture)
+
+  
+
+ write.csv(corn_training, here("data", "corn_training.csv"), row.names = FALSE)
 
 
 ```
