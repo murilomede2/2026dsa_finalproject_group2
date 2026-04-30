@@ -1,5 +1,6 @@
 ---
 title: "XGboost model"
+author: "Mia Gale"
 format: html
 editor: visual
 ---
@@ -17,67 +18,59 @@ library(xgboost)      # XGBoost implementation in R
 library(ranger)       # Fast implementation of Random Forests
 library(tidyverse)    # Data wrangling and visualization
 library(doParallel)   # For parallel computing (useful during resampling/tuning)
-library(caret)  # Other great library for Machine Learning 
-library(here)
-library(readr)
+library(caret)       # Other great library for Machine Learning 
 ```
 
 ```{r}
-
-corn_training_reduced <- read.csv(here("data", "corn_training_reduced.csv"))
-
 set.seed(9678965) # Setting seed to get reproducible results 
 
-corn_split_xgb <- initial_split(corn_training_reduced, 
+corn_split <- initial_split(corn_base_training, 
   prop = .7,
-  strata = yield_mg_ha) # proportion of split same as previous codes
-
-corn_split_xgb
+  strata = yield_mg_ha) # proption of split same as previous codes
+  
+corn_split
 ```
 
 ```{r corn Train}
-corn_train_xgb <- training(corn_split_xgb)  # 70% of data
-corn_train_xgb #This is your training data frame
+corn_train <- training(corn_split)  # 70% of data
+corn_train #This is your traing data frame
 ```
 
 ```{r corn testing}
-corn_test_xgb <- testing(corn_split_xgb)
-
-corn_test_xgb
-
+corn_test <- testing(corn_split)
+corn_test
 ```
 
 ```{r distribution}
 
 ggplot() +
-  geom_density(data = corn_train_xgb, 
+  geom_density(data = corn_train, 
                aes(x = yield_mg_ha),
                color = "red") +
-  geom_density(data = corn_test_xgb, 
+  geom_density(data = corn_test, 
                aes(x = yield_mg_ha),
                color = "blue") 
-
 ```
 
 ```{r recipe}
 # Create recipe for data preprocessing
-corn_recipe_xgb <- recipe(yield_mg_ha ~ ., data = corn_train_xgb) %>% 
-  step_impute_median(all_numeric_predictors()) %>%             #changing NAs values to median values
-  step_zv(all_predictors())                                    #removing zero variance
-
-corn_recipe_xgb
-
+corn_recipe <- recipe(yield_mg_ha ~ ., data = corn_train) %>% # Remove identifier columns and months not in growing season
+  step_rm(
+    year,       # Remove year identifier
+    site,       # Remove site identifier
+    matches("Jan|Feb|Mar|Apr|Nov|Dec")  # Remove non-growing season months
+  )
+corn_recipe
 ```
 
 ```{r}
 
 # Prep the recipe to estimate any required statistics
-corn_prep_xgb <- corn_recipe_xgb %>% 
+corn_prep <- corn_recipe %>% 
   prep()
 
 # Examine preprocessing steps
-corn_prep_xgb
-
+corn_prep
 ```
 
 ```{r}
@@ -85,7 +78,7 @@ corn_prep_xgb
 xgb_spec <- #Specifying XgBoost as our model type, asking to tune the hyperparameters
   boost_tree(
    # Total number of boosting iterations
-    trees = tune(), 
+    tree = tune(), 
          # Maximum depth of each tree
     tree_depth = tune(),
              # Minimum samples required to split a node
@@ -99,18 +92,16 @@ xgb_spec <- #Specifying XgBoost as our model type, asking to tune the hyperparam
   set_mode("regression")
 
 xgb_spec
-
 ```
 
 ```{r}
 set.seed(657) #34549
 
-resampling_foldcv <- vfold_cv(corn_train_xgb, # Create 5-fold cross-validation resampling object from training data
-                              v = 5)
+resampling_foldcv <- vfold_cv(corn_train, # Create 5-fold cross-validation resampling object from training data
+                              v = 10)
 
 resampling_foldcv
 resampling_foldcv$splits[[1]]
-
 ```
 
 ```{r}
@@ -123,7 +114,6 @@ xgb_grid <- grid_latin_hypercube(
 )
 
 xgb_grid
-
 ```
 
 ```{r}
@@ -134,7 +124,6 @@ ggplot(data = xgb_grid,
                  size = trees),
              alpha = .5,
              show.legend = FALSE)
-
 ```
 
 ```{r}
@@ -142,16 +131,15 @@ set.seed(6576)
 registerDoParallel(cores = parallel::detectCores() - 1)
 
 xgb_res <- tune_race_anova(object = xgb_spec,
-                      preprocessor = corn_recipe_xgb,
+                      preprocessor = corn_recipe,
                       resamples = resampling_foldcv,
                       grid = xgb_grid,
                       control = control_race(save_pred = TRUE))
 
-stopImplicitCluster()
+stopImplicitCluster
 
 beepr::beep()
-xgb_res$.metrics[[1]]
-
+xgb_res$.metrics[[2]]
 ```
 
 ```{r}
@@ -160,165 +148,103 @@ plot_race(xgb_res)
 
 ```{r}
 # Based on lowest RMSE
-best_rmse_xgb <- xgb_res %>% 
+best_rmse <- xgb_res %>% 
   select_best(metric = "rmse")%>% 
   mutate(source = "best_rmse")
 
-best_rmse_xgb
+best_rmse
 
 ```
 
 ```{r}
-best_rmse_pct_loss_xgb <- xgb_res %>% 
+best_rmse_pct_loss <- xgb_res %>% 
   select_by_pct_loss("min_n",
                      metric = "rmse",
                      limit = 1
                      )%>% 
   mutate(source = "best_rmse_pct_loss")
 
-best_rmse_pct_loss_xgb
-
+best_rmse_pct_loss
 ```
 
 ```{r}
 # Based on lowest RMSE within 1 se
-best_rmse_one_std_err_xgb <- xgb_res %>% 
+best_rmse_one_std_err <- xgb_res %>% 
   select_by_one_std_err(metric = "rmse",
                         eval_time = 100,
                         trees
                         )%>% 
   mutate(source = "best_rmse_one_std_err")
 
-best_rmse_one_std_err_xgb
-
+best_rmse_one_std_err
 ```
 
 ```{r}
 # Based on greatest R2
-best_r2_xgb <- xgb_res %>% 
+best_r2 <- xgb_res %>% 
   select_best(metric = "rsq")%>% 
   mutate(source = "best_r2")
 
-best_r2_xgb
-
+best_r2
 ```
 
 ```{r}
 # Based on lowers R2 within 1% loss
-best_r2_pct_loss_xgb <- xgb_res %>% 
+best_r2_pct_loss <- xgb_res %>% 
   select_by_pct_loss("min_n",
                      metric = "rsq",
                      limit = 1
                      ) %>% 
   mutate(source = "best_r2_pct_loss")
 
-best_r2_pct_loss_xgb
-
+best_r2_pct_loss
 ```
 
 ```{r}
 # Based on lowest R2 within 1 se
-best_r2_one_std_error_xgb <- xgb_res %>% 
+best_r2_one_std_error <- xgb_res %>% 
   select_by_one_std_err(metric = "rsq",
                         eval_time = 100,
                         trees
                         ) %>%
   mutate(source = "best_r2_one_std_error")
 
-best_r2_one_std_error_xgb
-
+best_r2_one_std_error
 ```
 
 ```{r}
-best_rmse_xgb %>% 
-  bind_rows(best_rmse_pct_loss_xgb, 
-            best_rmse_one_std_err_xgb, 
-            best_r2_xgb, 
-            best_r2_pct_loss_xgb, 
-            best_r2_one_std_error_xgb)
-
+best_rmse %>% 
+  bind_rows(best_rmse_pct_loss, 
+            best_rmse_one_std_err, 
+            best_r2, 
+            best_r2_pct_loss, 
+            best_r2_one_std_error)
 ```
 
 ```{r}
-final_spec_xgb <- boost_tree(
-  trees = best_r2_xgb$trees,           # Number of boosting rounds (trees)
-  tree_depth = best_r2_xgb$tree_depth, # Maximum depth of each tree
-  min_n = best_r2_xgb$min_n,           # Minimum number of samples to split a node
-  learn_rate = best_r2_xgb$learn_rate  # Learning rate (step size shrinkage)
+final_spec <- boost_tree(
+  trees = best_r2$trees,           # Number of boosting rounds (trees)
+  tree_depth = best_r2$tree_depth, # Maximum depth of each tree
+  min_n = best_r2$min_n,           # Minimum number of samples to split a node
+  learn_rate = best_r2$learn_rate  # Learning rate (step size shrinkage)
 ) %>%
   set_engine("xgboost") %>%
   set_mode("regression")
 
-final_spec_xgb
-
+final_spec
 ```
 
 ```{r}
 set.seed(877)
-final_fit_xgb <- last_fit(final_spec_xgb,
-                corn_recipe_xgb,
-                split = corn_split_xgb)
+final_fit <- last_fit(final_spec,
+                weather_recipe,
+                split = weather_split)
 
-final_fit_xgb %>%
+final_fit %>%
   collect_predictions()
-
 ```
 
 ```{r}
-final_fit_xgb %>%
+final_fit %>%
   collect_metrics()
-
-```
-
-```{r}
-final_spec_xgb %>%
-  fit(yield_mg_ha ~ .,
-      data = bake(corn_prep_xgb, 
-                  corn_train_xgb)) %>%
-  augment(new_data = bake(corn_prep_xgb, 
-                          corn_train_xgb)) %>% 
-  rmse(yield_mg_ha, .pred) %>%
-  bind_rows(
-    
-    
-# R2
-final_spec_xgb %>%
-  fit(yield_mg_ha ~ .,
-      data = bake(corn_prep_xgb, 
-                  corn_train_xgb)) %>%
-  augment(new_data = bake(corn_prep_xgb, 
-                          corn_train_xgb)) %>% 
-  rsq(yield_mg_ha, .pred))
-
-```
-
-```{r}
-final_fit_xgb %>%
-  collect_predictions() %>%
-  ggplot(aes(x = yield_mg_ha, y = .pred)) +
-  geom_point(alpha = 0.5) +
-  geom_abline(slope = 1, intercept = 0, color = "red", linetype = 2) +
-  geom_smooth(method = "lm", se = FALSE) +
-  labs(
-    x = "Observed Yield (Mg/ha)",
-    y = "Predicted Yield (Mg/ha)"
-  ) +
-  theme_minimal()
-
-```
-
-```{r}
-final_spec_xgb %>%
-  fit(yield_mg_ha ~ .,
-    data = bake(corn_prep_xgb, corn_train_xgb)) %>% #There little change in variable importance if you use full dataset
-    vi() %>%
-    mutate(
-      Variable = fct_reorder(Variable, 
-                           Importance)) %>%
-  ggplot(aes(x = Importance, 
-             y = Variable)) +
-  geom_col() +
-  scale_x_continuous(expand = c(0, 0)) +
-  labs(y = NULL)
-
 ```

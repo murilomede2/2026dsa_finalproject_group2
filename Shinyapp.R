@@ -8,7 +8,7 @@ library(plotly)
 #---------------------------
 # Load data
 #---------------------------
-corn_data <- read_csv("../2026dsa_finalproject_group2/data/training/corn_training.csv",
+corn_data <- read_csv("../2026_dsa-main/2026_dsa/06_finalproject/2026dsa_finalproject_group2/data/corn_training.csv",
                       show_col_types = FALSE)
 
 #---------------------------
