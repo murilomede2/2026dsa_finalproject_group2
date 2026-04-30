@@ -267,10 +267,10 @@ best_r2_xgb
 
 ```{r}
 final_spec_xgb <- boost_tree(
-  trees = best_rmse_xgb$trees,           # Number of boosting rounds (trees)
-  tree_depth = best_rmse_xgb$tree_depth, # Maximum depth of each tree
-  min_n = best_rmse_xgb$min_n,           # Minimum number of samples to split a node
-  learn_rate = best_rmse_xgb$learn_rate  # Learning rate (step size shrinkage)
+  trees = 600,           # Number of boosting rounds (trees)
+  tree_depth = 4, # Maximum depth of each tree
+  min_n = 10,           # Minimum number of samples to split a node
+  learn_rate = 0.0534  # Learning rate (step size shrinkage)
 ) %>%
   set_engine("xgboost") %>%
   set_mode("regression")
@@ -848,7 +848,7 @@ new_data_predictions <- corn_test_2024 %>%
 
 new_data_predictions
 
-write.csv(new_data_predictions,here("output", "new_data_predictions_xgb_svm.csv"),row.names = FALSE)
+write.csv(pred_xgb,here("data", "pred_xgb.csv"),row.names = FALSE)
 
 ```
 
@@ -858,8 +858,7 @@ write.csv(new_data_predictions,here("output", "new_data_predictions_xgb_svm.csv"
 
 #From ".qmd" to ".R":
 
- knitr::purl(here("code", "XGB and SVM Machine Models.qmd"), output = here("code", "XGB_SVM_Sapelo_script.R"), documentation = 0)
-
+ #knitr::purl(here("code", "XGB and SVM Machine Models.qmd"), output = here("code", "XGB_SVM_Sapelo_script.R"), documentation = 0)
 
 ```
 

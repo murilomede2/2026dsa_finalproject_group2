@@ -8,13 +8,26 @@ library(plotly)
 #---------------------------
 # Load data
 #---------------------------
-corn_data <- read_csv("../2026_dsa-main/2026_dsa/06_finalproject/2026dsa_finalproject_group2/data/corn_training.csv",
+corn_data <- read_csv("../2026dsa_finalproject_group2/data/training/corn_training.csv",
                       show_col_types = FALSE)
+
+#---------------------------
+# PNG file paths
+#---------------------------
+xgb_perf_png <- "../2026dsa_finalproject_group2/output/model_perf_test_data_xgb.png"
+xgb_vip_png  <- "../2026dsa_finalproject_group2/output/vip_test_data_xgb.png"
 
 #---------------------------
 # Variables
 #---------------------------
 soil_vars <- c("soil_ph", "om_pct", "soilk_ppm", "soilp_ppm")
+
+soil_colors <- c(
+  "Soil pH" = "darkorange",
+  "Organic Matter (%)" = "forestgreen",
+  "Soil K (ppm)" = "steelblue",
+  "Soil P (ppm)" = "purple"
+)
 
 weather_vars <- names(corn_data) %>%
   str_subset("^(prcp_mm|tmax_deg_c_mean|tmin_deg_c_mean|srad_w_m_2_mean|gdd)_")
@@ -73,13 +86,6 @@ ui <- fluidPage(
     sidebarPanel(
       
       selectInput(
-        inputId = "eda_var",
-        label = "Select variable to compare with yield:",
-        choices = names(corn_data)[names(corn_data) != "yield_mg_ha"],
-        selected = "soil_ph"
-      ),
-      
-      selectInput(
         inputId = "weather_type",
         label = "Select weather variable for density plot:",
         choices = unique(weather_long$variable),
@@ -104,11 +110,6 @@ ui <- fluidPage(
         ),
         
         tabPanel(
-          "Interactive Yield Plot",
-          plotlyOutput("interactive_yield", height = "600px")
-        ),
-        
-        tabPanel(
           "Weather Density Plot",
           plotOutput("weather_ridge", height = "650px")
         ),
@@ -116,6 +117,18 @@ ui <- fluidPage(
         tabPanel(
           "Soil Density Plot",
           plotOutput("soil_density", height = "500px")
+        ),
+        
+        tabPanel(
+          "Predicted vs Observed Yield - XGBoost",
+          h3("Predicted vs Observed Yield - XGBoost"),
+          imageOutput("xgb_perf_plot", height = "700px")
+        ),
+        
+        tabPanel(
+          "Variable Importance - XGBoost",
+          h3("Variable Importance - XGBoost"),
+          imageOutput("xgb_vip_plot", height = "700px")
         )
       )
     )
@@ -150,22 +163,7 @@ server <- function(input, output, session) {
       theme(axis.text.x = element_text(angle = 45, hjust = 1))
   })
   
-  output$interactive_yield <- renderPlotly({
-    
-    p <- ggplot(corn_data, aes(x = .data[[input$eda_var]], y = yield_mg_ha)) +
-      geom_point(alpha = 0.4, color = "darkblue") +
-      labs(
-        title = paste("Yield vs", input$eda_var),
-        x = input$eda_var,
-        y = "Yield (Mg/ha)"
-      ) +
-      theme_minimal()
-    
-    ggplotly(p)
-  })
-  
   output$weather_ridge <- renderPlot({
-    
     weather_long %>%
       filter(variable == input$weather_type) %>%
       ggplot(aes(x = value, y = month, fill = month)) +
@@ -181,10 +179,12 @@ server <- function(input, output, session) {
   
   output$soil_density <- renderPlot({
     
+    selected_color <- soil_colors[[input$soil_type]]
+    
     soil_long %>%
       filter(soil_variable == input$soil_type) %>%
       ggplot(aes(x = value)) +
-      geom_density(fill = "darkorange", alpha = 0.5, color = "black") +
+      geom_density(fill = selected_color, alpha = 0.5, color = "black") +
       labs(
         title = paste("Density Distribution of", input$soil_type),
         x = input$soil_type,
@@ -192,6 +192,24 @@ server <- function(input, output, session) {
       ) +
       theme_minimal()
   })
+  
+  output$xgb_perf_plot <- renderImage({
+    req(file.exists(xgb_perf_png))
+    list(
+      src = normalizePath(xgb_perf_png),
+      contentType = "image/png",
+      width = 900
+    )
+  }, deleteFile = FALSE)
+  
+  output$xgb_vip_plot <- renderImage({
+    req(file.exists(xgb_vip_png))
+    list(
+      src = normalizePath(xgb_vip_png),
+      contentType = "image/png",
+      width = 900
+    )
+  }, deleteFile = FALSE)
 }
 
 #---------------------------
